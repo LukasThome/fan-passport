@@ -1,0 +1,31 @@
+{
+  "name": "fanpassport-mvp",
+  "version": "0.1.0",
+  "description": "FanPassport PD3 MVP - non-transferable fan credentials, single-use presale codes and shared on-chain redemption across two issuers and two doors (INE5458, UFSC)",
+  "scripts": {
+    "test": "hardhat test",
+    "test:contracts": "hardhat test test/contracts/*.test.js",
+    "test:lib": "hardhat test test/lib/*.test.js",
+    "test:api": "hardhat test test/api/*.test.js",
+    "compile": "hardhat compile",
+    "start": "hardhat run scripts/start.js",
+    "chain": "hardhat node",
+    "start:localhost": "hardhat run scripts/start.js --network localhost",
+    "demo:cli": "hardhat run scripts/demo-cli.js",
+    "coverage": "hardhat coverage"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "hardhat": "^2.30.0",
+    "solc": "^0.8.24",
+    "supertest": "^7.3.2"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1",
+    "ethers": "^6.17.0",
+    "express": "^5.3.0",
+    "qrcode-generator": "^2.0.4"
+  },
+  "private": true
+}
