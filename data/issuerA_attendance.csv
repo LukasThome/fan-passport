@@ -1,0 +1,6 @@
+ticket_id,name,email,phone,checked_in,event
+T-1001,Ana Souza,ana@example.com,+55 48 99999-0001,yes,Floripa Live 2026-10-10
+T-1002,Bruno Lima,bruno@example.com,+55 48 99999-0002,yes,Floripa Live 2026-10-10
+T-1003,Carla Mendes,carla@example.com,+55 48 99999-0003,no,Floripa Live 2026-10-10
+T-1004,Ana Souza,ana@example.com,+55 48 99999-0001,yes,Floripa Live 2026-10-10
+T-1005,Diego Rocha,diego@example.com,+55 48 99999-0004,yes,Floripa Live 2026-10-10

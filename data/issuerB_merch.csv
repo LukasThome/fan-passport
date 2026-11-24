@@ -1,0 +1,6 @@
+order_id,name,email,phone,value,paid,refunded,created_at
+M-2001,Ana Souza,ana@example.com,+55 48 99999-0001,35.00,true,false,2026-09-28T14:00:00Z
+M-2002,Diego Rocha,diego@example.com,+55 48 99999-0004,12.00,true,false,2026-09-30T10:00:00Z
+M-2003,Eva Martins,eva@example.com,+55 48 99999-0005,48.00,true,true,2026-10-02T18:30:00Z
+M-2004,Felipe Costa,felipe@example.com,+55 48 99999-0006,60.00,true,false,{{RECENT}}
+M-2005,Gabi Nunes,gabi@example.com,+55 48 99999-0007,22.50,false,false,2026-10-05T09:15:00Z
