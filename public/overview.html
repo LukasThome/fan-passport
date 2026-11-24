@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FanPassport MVP - Overview</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="/vendor/ethers.js"></script>
+  <script src="js/common.js"></script>
+</head>
+<body>
+<main>
+  <h1>FanPassport <span class="muted" style="font-weight:400">— fair access to the shows fans love</span></h1>
+  <p class="sub">PD3 MVP · Group 5 · INE5458 Blockchain and Cryptocurrencies Technologies, UFSC. Two issuers, two doors, one shared redemption record on-chain. All fan data is synthetic.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Demo script (Technical White Paper, Appendix A)</h2>
+      <ol class="script">
+        <li><b>Step 0</b> — Admin registered Issuer A and Issuer B, their doors, and joint drop D1 <span class="pill ok">done at start-up</span></li>
+        <li><b>Step 1</b> — <a href="issuer.html?id=1">Issuer A</a> uploads the attendance CSV; the fan claims from the <a href="outbox.html">inbox</a> (OTP + wallet signature). A non-listed email is refused.</li>
+        <li><b>Step 2</b> — <a href="issuer.html?id=2">Issuer B</a> uploads a merch CSV; the row below $15 is rejected. The fan claims.</li>
+        <li><b>Step 3</b> — The <a href="wallet.html">fan wallet</a> holds both credentials at distinct addresses; a transfer attempt reverts.</li>
+        <li><b>Step 4</b> — <a href="door.html?id=1">Door 1</a> scans credential A, name-checks, redeems and shows ADMIT after the receipt.</li>
+        <li><b>Step 5</b> — Seconds later <a href="door.html?id=2">Door 2</a> rejects the same credential on <code>AlreadyRedeemed</code>, citing Door 1's tx.</li>
+        <li><b>Step 6</b> — Door 2 admits credential B (its own issuer).</li>
+        <li><b>Step 7</b> — Re-scan rejected; Issuer A revokes A2 and its scan is rejected; an expired QR is rejected.</li>
+      </ol>
+      <p class="small muted">Soft gate: issuers upload single-use presale codes to the mock <a href="seller.html">ticket seller</a>; the door is the hard gate.</p>
+    </div>
+
+    <div class="card">
+      <h2>Chain</h2>
+      <div id="chain" class="small">Loading…</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row"><h2 style="margin:0">On-chain event log</h2><span class="spacer"></span><span class="small muted">refreshes every 3 s · no personal data</span></div>
+    <div id="events" class="small"></div>
+  </div>
+
+  <p class="footer-note">Why a chain at all? For one artist, one seller and one door a signed credential plus a database is cheaper and sufficient. The chain earns its place when independent issuers and doors must share single-use state without appointing a trusted operator — exactly the two-issuer, two-door scenario staged here.</p>
+</main>
+<script>
+  async function loadChain() {
+    const s = await FP.state();
+    const issuers = s.issuers.map((i) => `<tr><td>${FP.esc(i.short)}</td><td>${FP.esc(i.kind)}</td><td><span class="pill ${i.active ? "ok" : "bad"}">${i.active ? "active" : "suspended"}</span> epoch ${i.epoch}</td><td class="mono">${FP.short(i.key)}</td></tr>`).join("");
+    const doors = s.doors.map((d) => `<tr><td>${FP.esc(d.name)}</td><td class="mono">${FP.short(d.address)}</td></tr>`).join("");
+    document.getElementById("chain").innerHTML = `
+      <p>Network <b>${FP.esc(s.network)}</b> · chainId <b>${s.chainId}</b></p>
+      <table><tr><th>Contract</th><th>Address</th></tr>
+      ${Object.entries(s.contracts).map(([k, v]) => `<tr><td>${k}</td><td class="mono">${v}</td></tr>`).join("")}</table>
+      <h2 style="margin-top:14px">Issuer registry</h2><table>${issuers}</table>
+      <h2 style="margin-top:14px">Doors</h2><table>${doors}</table>
+      <p>Drop <b>${FP.esc(s.drop.name)}</b> accepts issuers ${s.drop.acceptedIssuers.join(", ")}</p>`;
+  }
+  async function loadEvents() {
+    const events = await FP.api("/api/events");
+    document.getElementById("events").innerHTML = events.map((e) => `
+      <div class="event"><div><b>${FP.esc(e.name)}</b><br><span class="muted">${FP.esc(e.contract)} · block ${e.blockNumber}</span></div>
+      <div class="mono">${Object.entries(e.args).map(([k, v]) => `${FP.esc(k)}=${FP.esc(Array.isArray(v) ? "[" + v.join(",") + "]" : v)}`).join("  ")}<br><span class="muted">tx ${e.txHash}</span></div></div>`).join("") || "No events yet.";
+  }
+  loadChain().catch((e) => FP.toast(e.message, true));
+  loadEvents();
+  setInterval(loadEvents, 3000);
+</script>
+</body>
+</html>

@@ -3,7 +3,8 @@
 
 const FP = (() => {
   const NAV = [
-    ["index.html", "Overview"],
+    ["index.html", "Sandbox"],
+    ["overview.html", "Overview"],
     ["issuer.html?id=1", "Issuer A"],
     ["issuer.html?id=2", "Issuer B"],
     ["outbox.html", "Fan inbox / phone"],
@@ -147,4 +148,6 @@ const FP = (() => {
   return { renderNav, api, toast, esc, short, param, state, loadWallet, saveWallet, ensureProfile, signerFor, addCredential, publishLiveQr, liveQrs, signHolderProof, REASONS };
 })();
 
-document.addEventListener("DOMContentLoaded", FP.renderNav);
+document.addEventListener("DOMContentLoaded", () => {
+  if (!window.FP_NO_NAV) FP.renderNav();
+});

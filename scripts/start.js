@@ -2,14 +2,13 @@
 //   npm start                     -> in-process Hardhat chain (one command, nothing else to run)
 //   npm run chain + start:localhost -> separate Hardhat node at 127.0.0.1:8545
 const hre = require("hardhat");
-const { createSystem } = require("../src/system");
-const { createApp } = require("../src/app");
+const { createServer } = require("../src/server");
 
 const PORT = Number(process.env.PORT || 3000);
 
 async function main() {
-  const system = await createSystem(hre.ethers);
-  const app = createApp(system);
+  const app = await createServer(hre.ethers);
+  const system = app.current().system;
   const { registry, credential, gate } = system.contracts;
   await new Promise((resolve) => app.listen(PORT, resolve));
 
@@ -21,7 +20,8 @@ async function main() {
     FanCredential   ${await credential.getAddress()}
     RedemptionGate  ${await gate.getAddress()}
 
-    Overview        ${url}/
+    Sandbox         ${url}/            <- start here: demo steps left, fan iPhone right
+    Overview        ${url}/overview.html
     Issuer A        ${url}/issuer.html?id=1
     Issuer B        ${url}/issuer.html?id=2
     Fan inbox       ${url}/outbox.html

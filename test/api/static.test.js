@@ -24,7 +24,7 @@ describe("API - static pages and vendored scripts", function () {
     expect(res.text).to.match(/var qrcode\s*=/);
   });
 
-  for (const page of ["index", "issuer", "outbox", "claim", "wallet", "door", "seller"]) {
+  for (const page of ["index", "overview", "issuer", "outbox", "claim", "wallet", "door", "seller"]) {
     it(`serves ${page}.html`, async function () {
       const res = await request(app).get(`/${page}.html`);
       expect(res.status).to.equal(200);

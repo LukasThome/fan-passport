@@ -20,6 +20,8 @@ npm test           # 111 tests: contracts, off-chain rules, API end to end
 npm start          # deploys to an in-process chain and serves http://localhost:3000
 ```
 
+Open **http://localhost:3000** — the **Sandbox**: the demo script on the left (each step runs for real against the contracts), the fan's iPhone on the right showing the wallet, claim, presale code and rotating door pass as you go. *Reset chain* redeploys fresh contracts. The classic per-actor pages (issuer portals, doors, seller, overview) are still in the top menu.
+
 Other commands:
 
 | Command | What it does |
@@ -35,7 +37,7 @@ Chain state lives in memory: restarting `npm start` resets the demo. To reset th
 
 ## Live demo walkthrough (≈5 min)
 
-Open `http://localhost:3000` — the overview shows the contracts, the issuer registry and a live on-chain event log.
+The Sandbox runs all of this with one button per step. To drive each actor by hand instead, use the classic pages; `/overview.html` shows the contracts, the issuer registry and a live on-chain event log.
 
 | Step | Where | What to click | What it shows |
 |---|---|---|---|
