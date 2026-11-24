@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FanPassport - Door</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="/vendor/ethers.js"></script>
+  <script src="js/common.js"></script>
+</head>
+<body>
+<main style="max-width:860px">
+  <h1 id="title">Door</h1>
+  <p class="sub" id="subtitle"></p>
+
+  <div class="card">
+    <h2>Scan</h2>
+    <div class="row">
+      <select id="live" style="min-width:320px"></select>
+      <button class="secondary" id="useLive">Scan live QR from this device's wallet</button>
+    </div>
+    <label style="margin-top:12px">…or paste the QR payload</label>
+    <textarea id="payload" style="min-height:80px"></textarea>
+    <div class="row" style="margin-top:10px"><button id="checkBtn">Check credential</button><span class="small muted">Verifies the holder signature and reads chain state. No write yet.</span></div>
+  </div>
+
+  <div id="result"></div>
+</main>
+<script>
+  const doorId = Number(FP.param("id") || 1);
+  let door, lastCheck;
+
+  async function init() {
+    const s = await FP.state();
+    door = s.doors.find((d) => d.id === doorId);
+    const issuer = s.issuers.find((i) => i.id === door.issuerId);
+    document.title = `FanPassport - ${door.name}`;
+    document.getElementById("title").textContent = door.name;
+    document.getElementById("subtitle").innerHTML = `Drop D1 · door key <span class="mono">${door.address}</span> · name-checks only <b>${FP.esc(issuer.short)}</b>'s credentials; for other issuers it checks eligibility and redemption on-chain only.`;
+  }
+
+  function refreshLive() {
+    const sel = document.getElementById("live");
+    const prev = sel.value;
+    const items = FP.liveQrs();
+    sel.innerHTML = items.length ? items.map(([k, e]) => `<option value="${FP.esc(k)}">${FP.esc(e.label)}</option>`).join("") : "<option value=''>(open the fan wallet and show a QR)</option>";
+    if (items.find(([k]) => k === prev)) sel.value = prev;
+  }
+  document.getElementById("useLive").onclick = () => {
+    const entry = FP.liveQrs().find(([k]) => k === document.getElementById("live").value);
+    if (!entry) return FP.toast("No live QR on this device", true);
+    document.getElementById("payload").value = entry[1].payload;
+    check();
+  };
+  document.getElementById("checkBtn").onclick = check;
+
+  async function check() {
+    const payload = document.getElementById("payload").value;
+    const out = document.getElementById("result");
+    out.innerHTML = '<div class="verdict pending"><div>Checking…</div></div>';
+    const r = await FP.api(`/api/doors/${doorId}/check`, { payload });
+    lastCheck = { payload, r };
+    const steps = (r.steps || []).map((s) => `<li>${FP.esc(s)}</li>`).join("");
+    if (!r.ok) {
+      out.innerHTML = rejectHtml(r, steps) + `<div class="card"><p class="small muted">Demo: bypass this door's checks and submit <code>redeem()</code> anyway — the contract itself enforces the rules.</p><button class="danger" id="forceBtn">Force-submit redeem() to the chain</button><div id="forceOut"></div></div>`;
+      document.getElementById("forceBtn").onclick = force;
+      return;
+    }
+    out.innerHTML = `
+      <div class="card">
+        <h2>Credential #${r.credentialId} · ${FP.esc(r.issuerShort)} · ${r.credType === 2 ? "merch-qualified" : "attended"} <span class="pill ok">eligible</span></h2>
+        <ul class="steps">${steps}</ul>
+        ${r.ownIssuer
+          ? `<div class="card tight" style="background:var(--panel-2)"><div class="muted small">Name on ${FP.esc(r.issuerShort)}'s record (from the issuer's backend, never from the chain)</div><div style="font-size:26px;font-weight:800">${FP.esc(r.holderName)}</div>
+             <label style="margin-top:8px;display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="idOk"> Staff: the name matches the fan's ID</label></div>`
+          : `<p class="small"><span class="pill info">other issuer</span> No name check here — name binding is ${FP.esc(r.issuerShort)}'s responsibility at its own door or in post-sale audit.</p>`}
+        <button id="redeemBtn" style="margin-top:12px">Redeem on-chain &amp; admit</button>
+      </div><div id="verdict"></div>`;
+    document.getElementById("redeemBtn").onclick = redeem;
+  }
+
+  function rejectHtml(r, steps) {
+    return `<div class="verdict reject"><div class="big">REJECT</div><p><b>${FP.esc(r.reason)}</b> — ${FP.esc(FP.REASONS[r.reason] || "")}</p>
+      ${r.priorTx ? `<p class="small">Redeemed earlier by <b>${FP.esc(r.priorDoor)}</b> · block ${r.priorBlock}<br><span class="mono">tx ${r.priorTx}</span></p>` : ""}</div>
+      ${steps ? `<div class="card tight"><ul class="steps">${steps}</ul></div>` : ""}`;
+  }
+
+  async function redeem(ev) {
+    ev.target.disabled = true;
+    const v = document.getElementById("verdict");
+    v.innerHTML = '<div class="verdict pending"><div class="big">WAIT</div><p>redeem() submitted — admitting only after the receipt shows success</p></div>';
+    try {
+      const idOk = document.getElementById("idOk");
+      const r = await FP.api(`/api/doors/${doorId}/redeem`, { payload: lastCheck.payload, idChecked: idOk ? idOk.checked : false });
+      v.innerHTML = r.admit
+        ? `<div class="verdict admit"><div class="big">ADMIT</div><p>Receipt status ${r.receiptStatus} · block ${r.blockNumber}</p><p class="mono">tx ${r.txHash}</p></div>`
+        : rejectHtml(r, "");
+    } catch (e) {
+      v.innerHTML = `<div class="verdict reject"><div class="big">HOLD</div><p>${FP.esc(e.message)}</p></div>`;
+      ev.target.disabled = false;
+    }
+  }
+
+  async function force(ev) {
+    ev.target.disabled = true;
+    const r = await FP.api(`/api/doors/${doorId}/redeem`, { payload: lastCheck.payload, force: true });
+    document.getElementById("forceOut").innerHTML = r.admit
+      ? `<div class="verdict admit"><div class="big">ADMIT</div><p class="mono">tx ${r.txHash}</p></div>`
+      : `<div class="verdict reject"><div class="big">REVERTED</div><p>The contract rejected it: <code>${FP.esc(r.reason)}</code></p>${r.revertedTx ? `<p class="mono">reverted tx ${r.revertedTx}</p>` : ""}</div>`;
+  }
+
+  init().catch((e) => FP.toast(e.message, true));
+  refreshLive();
+  setInterval(refreshLive, 2000);
+</script>
+</body>
+</html>

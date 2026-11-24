@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FanPassport - Ticket seller (mock)</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="/vendor/ethers.js"></script>
+  <script src="js/common.js"></script>
+</head>
+<body>
+<main style="max-width:760px">
+  <h1>Ticket seller <span class="pill warn">mocked</span></h1>
+  <p class="sub">An existing seller that supports uploading single-use code lists. It knows codes only — no names, no wallets. This is the soft gate; the door is the hard gate.</p>
+  <div class="card">
+    <h2>Presale · D1 Summer Tour 2027</h2>
+    <div class="row">
+      <div><label>Presale code</label><input id="code" placeholder="8 characters" style="text-transform:uppercase;letter-spacing:3px" /></div>
+      <div><label>Name on the order</label><input id="buyer" value="Ana Souza" /></div>
+      <button id="buy" style="align-self:end">Buy presale ticket</button>
+    </div>
+    <div id="out" style="margin-top:12px"></div>
+  </div>
+  <div class="card">
+    <h2>Uploaded code lists</h2>
+    <div id="lists" class="small">None yet — upload from an issuer portal.</div>
+  </div>
+</main>
+<script>
+  document.getElementById("buy").onclick = async () => {
+    const r = await FP.api("/api/seller/redeem", { code: document.getElementById("code").value, buyerName: document.getElementById("buyer").value });
+    document.getElementById("out").innerHTML = r.ok
+      ? `<div class="verdict admit"><div class="big">RESERVED</div><p>${FP.esc(r.message)} for ${FP.esc(r.buyerName)}. The order name must match the issuer's record at the door and in post-sale audit.</p></div>`
+      : `<div class="verdict reject"><div class="big">DECLINED</div><p>${FP.esc(r.reason)}</p></div>`;
+    load();
+  };
+  async function load() {
+    const codes = await FP.api("/api/seller/codes");
+    if (!codes.length) return;
+    document.getElementById("lists").innerHTML = `<table><tr><th>Code</th><th>From</th><th>Drop</th><th>Status</th></tr>${codes.map((c) => `<tr><td class="mono">${FP.esc(c.code)}</td><td>Issuer ${c.issuerId === 1 ? "A" : "B"}</td><td>D${c.dropId}</td><td>${c.used ? '<span class="pill bad">used</span>' : '<span class="pill ok">unused</span>'}</td></tr>`).join("")}</table>`;
+  }
+  load();
+  setInterval(load, 4000);
+</script>
+</body>
+</html>

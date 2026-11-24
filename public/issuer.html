@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FanPassport - Issuer portal</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="/vendor/ethers.js"></script>
+  <script src="js/common.js"></script>
+</head>
+<body>
+<main>
+  <h1 id="title">Issuer portal</h1>
+  <p class="sub" id="subtitle"></p>
+
+  <div class="card">
+    <div class="row"><h2 style="margin:0">1 · Upload evidence (CSV export)</h2><span class="spacer"></span><button class="secondary" id="sampleBtn">Load sample export</button></div>
+    <p class="small muted" id="rules"></p>
+    <textarea id="csv" placeholder="Paste the check-in list or order export here"></textarea>
+    <div class="row" style="margin-top:10px"><button id="uploadBtn">Apply rules &amp; send claim invites</button><span class="small muted">Evidence stays off-chain with the issuer.</span></div>
+    <div id="result" style="margin-top:14px"></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><h2 style="margin:0">2 · Issued credentials</h2><span class="spacer"></span><button class="secondary" id="refreshBtn">Refresh</button></div>
+    <p class="small muted">Status is read from the chain. Revoke on refund, chargeback or fraud flag.</p>
+    <div id="creds">None yet.</div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Presale codes for drop D1</h2>
+    <p class="small muted">One single-use, credential-bound code per valid credential: HMAC-SHA256(HKDF(master key, salt = dropId), credentialId) → 8 base32 chars. The seller receives codes only — no names.</p>
+    <button id="codesBtn">Upload code list to the ticket seller</button>
+    <div id="codes" class="mono" style="margin-top:10px"></div>
+  </div>
+</main>
+<script>
+  const id = Number(FP.param("id") || 1);
+  let issuer;
+
+  async function init() {
+    const s = await FP.state();
+    issuer = s.issuers.find((i) => i.id === id);
+    document.getElementById("title").textContent = issuer.name;
+    document.getElementById("subtitle").innerHTML = `Issuer #${issuer.id} · ${issuer.kind} credentials for <b>${FP.esc(issuer.eventName)}</b> · signing key <span class="mono">${issuer.key}</span>`;
+    document.getElementById("rules").textContent = issuer.kind === "merch"
+      ? "Rules: order paid · not refunded · value ≥ $15 · older than the 14-day hold · one record per identity (name + phone) · ≤ 2 identities per phone."
+      : "Rules: ticket scanned at the door (checked_in = yes) · one record per identity (name + phone) · ≤ 2 identities per phone.";
+    loadCreds();
+  }
+
+  document.getElementById("sampleBtn").onclick = async () => {
+    document.getElementById("csv").value = await (await fetch(`/api/issuers/${id}/sample`)).text();
+  };
+
+  document.getElementById("uploadBtn").onclick = async (ev) => {
+    ev.target.disabled = true;
+    try {
+      const r = await FP.api(`/api/issuers/${id}/upload`, { csv: document.getElementById("csv").value });
+      document.getElementById("result").innerHTML = `
+        <div class="grid">
+          <div><h2><span class="pill ok">${r.eligible.length} eligible</span></h2>
+            <table>${r.eligible.map((e) => `<tr><td>${FP.esc(e.name)}</td><td class="muted">${FP.esc(e.email)}</td></tr>`).join("")}</table>
+            <p class="small muted">Claim links + one-time codes sent → <a href="outbox.html">fan inbox</a></p></div>
+          <div><h2><span class="pill bad">${r.rejected.length} rejected</span></h2>
+            <table>${r.rejected.map((e) => `<tr><td>${FP.esc(e.id)} ${FP.esc(e.name)}</td><td class="muted">${FP.esc(e.reason)}</td></tr>`).join("")}</table></div>
+        </div>`;
+    } catch (e) {
+      FP.toast(e.message, true);
+    } finally {
+      ev.target.disabled = false;
+    }
+  };
+
+  async function loadCreds() {
+    const list = await FP.api(`/api/issuers/${id}/credentials`);
+    if (!list.length) return (document.getElementById("creds").textContent = "None yet.");
+    document.getElementById("creds").innerHTML = `<table><tr><th>#</th><th>Fan (off-chain)</th><th>Holder address</th><th>Status</th><th></th></tr>
+      ${list.map((c) => `<tr><td>${c.tokenId}</td><td>${FP.esc(c.name)}<br><span class="muted small">${FP.esc(c.email)}</span></td>
+        <td class="mono">${c.holder}</td>
+        <td>${c.valid ? '<span class="pill ok">valid</span>' : `<span class="pill bad">${c.revoked ? "revoked" : "invalid"}</span>`} ${c.redeemedInD1 ? '<span class="pill info">redeemed D1</span>' : ""}</td>
+        <td>${c.revoked ? "" : `<button class="danger" data-revoke="${c.tokenId}">Revoke</button>`}</td></tr>`).join("")}</table>`;
+    document.querySelectorAll("[data-revoke]").forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await FP.api(`/api/issuers/${id}/revoke`, { tokenId: Number(b.dataset.revoke) });
+        FP.toast(`Revoked #${b.dataset.revoke} · tx ${FP.short(r.txHash)}`);
+        loadCreds();
+      } catch (e) {
+        FP.toast(e.message, true);
+        b.disabled = false;
+      }
+    }));
+  }
+  document.getElementById("refreshBtn").onclick = loadCreds;
+
+  document.getElementById("codesBtn").onclick = async () => {
+    try {
+      const r = await FP.api(`/api/issuers/${id}/upload-codes`, { dropId: 1 });
+      document.getElementById("codes").innerHTML = `${r.count} code(s) uploaded to the seller for D1:<br>${r.codes.map(FP.esc).join("  ")}`;
+    } catch (e) {
+      FP.toast(e.message, true);
+    }
+  };
+
+  init().catch((e) => FP.toast(e.message, true));
+  setInterval(loadCreds, 5000);
+</script>
+</body>
+</html>

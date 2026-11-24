@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FanPassport - Claim your credential</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="/vendor/ethers.js"></script>
+  <script src="js/common.js"></script>
+</head>
+<body>
+<main style="max-width:640px">
+  <h1>Claim your FanPassport</h1>
+  <p class="sub" id="who">Loading…</p>
+  <div class="card" id="form" hidden>
+    <label>1 · One-time code sent to your phone</label>
+    <input id="otp" inputmode="numeric" maxlength="6" placeholder="6 digits" style="font-size:22px;letter-spacing:6px;width:180px" />
+    <p class="small muted">Mock phone: see the code in the <a href="outbox.html" target="_blank">fan inbox</a>.</p>
+    <label style="margin-top:14px">2 · Bind your wallet</label>
+    <p class="small">Your FanPassport wallet lives in this browser. For this issuer it uses the address <span class="mono" id="addr"></span> (one HD wallet, a distinct address per issuer).</p>
+    <button id="claimBtn">Sign &amp; claim (gas is sponsored)</button>
+  </div>
+  <div id="out"></div>
+</main>
+<script>
+  const token = FP.param("token");
+  let info, profile, wallet;
+
+  async function init() {
+    try {
+      info = await FP.api(`/api/claim/${token}`);
+    } catch (e) {
+      document.getElementById("who").innerHTML = `<span class="pill bad">${FP.esc(e.message)}</span>`;
+      return;
+    }
+    document.getElementById("who").innerHTML = `<b>${FP.esc(info.issuerName)}</b> recorded your activity at <b>${FP.esc(info.eventName)}</b>. Hi ${FP.esc(info.name)}!`;
+    if (info.used) {
+      document.getElementById("out").innerHTML = `<div class="card"><span class="pill info">Already claimed</span> as credential #${info.tokenId}. <a href="wallet.html">Open wallet</a></div>`;
+      return;
+    }
+    profile = info.name; // demo: one wallet profile per fan, so Ana's and Bruno's wallets stay separate
+    FP.ensureProfile(profile);
+    wallet = FP.signerFor(profile, info.issuerId);
+    document.getElementById("addr").textContent = wallet.address;
+    document.getElementById("form").hidden = false;
+  }
+
+  document.getElementById("claimBtn").onclick = async (ev) => {
+    ev.target.disabled = true;
+    const out = document.getElementById("out");
+    out.innerHTML = '<div class="verdict pending"><div>Minting… waiting for the receipt</div></div>';
+    try {
+      const signature = await wallet.signMessage(`FanPassport: bind ${wallet.address} to claim ${token}`);
+      const r = await FP.api(`/api/claim/${token}`, { otp: document.getElementById("otp").value, holder: wallet.address, signature });
+      FP.addCredential(profile, { tokenId: r.tokenId, issuerId: r.issuerId, issuerShort: r.issuerShort, eventName: r.eventName, credType: r.credType, holder: r.holder, txHash: r.txHash });
+      out.innerHTML = `<div class="verdict admit"><div class="big">CLAIMED</div><p>Credential #${r.tokenId} minted to your wallet (locked, non-transferable).</p><p class="mono">tx ${r.txHash}</p></div><a class="btn" href="wallet.html">Open my wallet →</a>`;
+      document.getElementById("form").hidden = true;
+    } catch (e) {
+      out.innerHTML = `<div class="verdict reject"><div class="big">REFUSED</div><p>${FP.esc(e.message)}</p></div>`;
+      ev.target.disabled = false;
+    }
+  };
+  init();
+</script>
+</body>
+</html>

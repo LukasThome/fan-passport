@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FanPassport - Fan inbox (mock)</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="/vendor/ethers.js"></script>
+  <script src="js/common.js"></script>
+</head>
+<body>
+<main>
+  <h1>Fan inbox &amp; phone <span class="pill warn">mocked</span></h1>
+  <p class="sub">Claim e-mails go to the address in the issuer's export; the one-time code (TOTP, RFC 6238) arrives on the verified phone. Both are mocked in the MVP.</p>
+
+  <div class="card">
+    <h2>Not on the list?</h2>
+    <div class="row">
+      <select id="reqIssuer"><option value="1">Issuer A</option><option value="2">Issuer B</option></select>
+      <input id="reqEmail" placeholder="email" value="mallory@example.com" />
+      <button class="secondary" id="reqBtn">Request a claim link</button>
+      <span id="reqOut" class="small"></span>
+    </div>
+  </div>
+
+  <div id="mails"></div>
+</main>
+<script>
+  document.getElementById("reqBtn").onclick = async () => {
+    const out = document.getElementById("reqOut");
+    try {
+      const r = await FP.api("/api/claim/request", { issuerId: Number(document.getElementById("reqIssuer").value), email: document.getElementById("reqEmail").value });
+      out.innerHTML = `<span class="pill ok">${FP.esc(r.message)}</span>`;
+    } catch (e) {
+      out.innerHTML = `<span class="pill bad">Refused: ${FP.esc(e.message)}</span>`;
+    }
+  };
+
+  async function load() {
+    const mails = await FP.api("/api/outbox");
+    document.getElementById("mails").innerHTML = mails.length ? mails.map((m) => `
+      <div class="card tight">
+        <div class="row"><b>${FP.esc(m.subject)}</b><span class="spacer"></span><span class="small muted">${new Date(m.sentAt).toLocaleTimeString()}</span></div>
+        <div class="small muted">To: ${FP.esc(m.name)} &lt;${FP.esc(m.to)}&gt;</div>
+        <div class="row" style="margin-top:8px">
+          <a class="btn" href="${m.link}" target="_blank">Claim my credential →</a>
+          <span class="spacer"></span>
+          <span class="small muted">📱 ${FP.esc(m.mockPhone)} · one-time code</span> <span class="otp">${m.currentOtp}</span>
+        </div>
+      </div>`).join("") : '<div class="card muted">No messages yet — upload a CSV in an issuer portal.</div>';
+  }
+  load();
+  setInterval(load, 3000);
+</script>
+</body>
+</html>

@@ -31,4 +31,6 @@ module.exports = {
     arbitrumSepolia: { url: process.env.ARB_SEPOLIA_RPC || "https://sepolia-rollup.arbitrum.io/rpc", accounts: testnetAccounts },
   },
   mocha: { timeout: 60000 },
+  // REPORT_GAS=1 npm run test:contracts -> gas per mint / redeem (white paper section 5.4)
+  gasReporter: { enabled: Boolean(process.env.REPORT_GAS), currency: "USD", offline: true },
 };

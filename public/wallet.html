@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FanPassport - Fan wallet</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="/vendor/ethers.js"></script>
+  <script src="/vendor/qrcode.js"></script>
+  <script src="js/common.js"></script>
+</head>
+<body>
+<main>
+  <div class="row">
+    <div><h1>Fan wallet</h1><p class="sub" style="margin:0">Holder PWA: one HD wallet per fan, a distinct address per issuer. Keys never leave this browser.</p></div>
+    <span class="spacer"></span>
+    <label style="margin:0">Fan</label><select id="profile"></select>
+  </div>
+
+  <div class="grid" style="margin-top:18px">
+    <div id="creds"></div>
+    <div>
+      <div class="card" id="qrCard" hidden>
+        <div class="row"><h2 style="margin:0" id="qrTitle">Door QR</h2><span class="spacer"></span><span class="countdown" id="countdown"></span></div>
+        <p class="small muted">A challenge signed by your holder key, refreshed every 30 s — a screenshot goes stale. Show it at the door (or open Door 1 / Door 2 in another tab and use “scan from this device”).</p>
+        <div class="qr" id="qr"></div>
+        <details style="margin-top:10px"><summary class="small muted">Raw QR payload</summary><div class="mono" id="payload"></div></details>
+        <div class="row" style="margin-top:10px"><button class="secondary" id="stopQr">Hide QR</button></div>
+      </div>
+      <div class="card" id="info" hidden></div>
+    </div>
+  </div>
+</main>
+<script>
+  let profile = null;
+  let timer = null;
+
+  function profiles() {
+    const w = FP.loadWallet();
+    return Object.keys(w.profiles);
+  }
+
+  function renderProfiles() {
+    const w = FP.loadWallet();
+    const sel = document.getElementById("profile");
+    const names = profiles();
+    sel.innerHTML = names.length ? names.map((n) => `<option ${n === w.active ? "selected" : ""}>${FP.esc(n)}</option>`).join("") : "<option>(no credentials yet)</option>";
+    profile = names.includes(w.active) ? w.active : names[0] || null;
+    sel.onchange = () => {
+      const w2 = FP.loadWallet();
+      w2.active = sel.value;
+      FP.saveWallet(w2);
+      profile = sel.value;
+      stopQr();
+      renderCreds();
+    };
+  }
+
+  async function renderCreds() {
+    const el = document.getElementById("creds");
+    if (!profile) {
+      el.innerHTML = '<div class="card muted">No credentials yet. Claim one from the <a href="outbox.html">fan inbox</a>.</div>';
+      return;
+    }
+    const creds = FP.loadWallet().profiles[profile].credentials;
+    const cards = [];
+    for (const c of creds) {
+      let st = null;
+      try { st = await FP.api(`/api/credentials/${c.tokenId}`); } catch (_) {}
+      const status = !st ? '<span class="pill bad">not found on-chain</span>'
+        : `${st.valid ? '<span class="pill ok">valid</span>' : `<span class="pill bad">${st.revoked ? "revoked" : "invalid"}</span>`} ${st.redeemedInD1 ? '<span class="pill info">used for D1</span>' : ""} <span class="pill">locked</span>`;
+      cards.push(`
+        <div class="card cred issuer-${c.issuerId}">
+          <div class="row"><b>${FP.esc(c.issuerShort)}</b> · ${c.credType === 2 ? "merch-qualified" : "attended"} · ${FP.esc(c.eventName)}<span class="spacer"></span>#${c.tokenId}</div>
+          <div style="margin:6px 0">${status}</div>
+          <div class="small muted">Address for this issuer: <span class="mono">${c.holder}</span></div>
+          <div class="row" style="margin-top:10px">
+            <button data-qr="${c.tokenId}">Show door QR (D1)</button>
+            <button class="secondary" data-code="${c.tokenId}">Reveal presale code</button>
+            <button class="secondary" data-transfer="${c.tokenId}">Try to transfer</button>
+            <button class="secondary" data-expired="${c.tokenId}" title="For the demo: a QR signed 2 minutes ago">Expired QR (test)</button>
+          </div>
+        </div>`);
+    }
+    el.innerHTML = cards.join("") || '<div class="card muted">No credentials in this wallet.</div>';
+    const byId = (id) => creds.find((c) => String(c.tokenId) === String(id));
+    el.querySelectorAll("[data-qr]").forEach((b) => (b.onclick = () => startQr(byId(b.dataset.qr))));
+    el.querySelectorAll("[data-expired]").forEach((b) => (b.onclick = () => startQr(byId(b.dataset.expired), true)));
+    el.querySelectorAll("[data-code]").forEach((b) => (b.onclick = () => revealCode(byId(b.dataset.code))));
+    el.querySelectorAll("[data-transfer]").forEach((b) => (b.onclick = () => tryTransfer(byId(b.dataset.transfer))));
+  }
+
+  async function startQr(cred, expired = false) {
+    stopQr();
+    const wallet = FP.signerFor(profile, cred.issuerId);
+    document.getElementById("qrCard").hidden = false;
+    document.getElementById("qrTitle").textContent = `${expired ? "EXPIRED test QR" : "Door QR"} · ${cred.issuerShort} #${cred.tokenId}`;
+    let issuedAt;
+    async function refresh() {
+      issuedAt = Math.floor(Date.now() / 1000) - (expired ? 120 : 0);
+      const payload = await FP.signHolderProof(wallet, cred.tokenId, 1, issuedAt);
+      const qr = qrcode(0, "M");
+      qr.addData(payload);
+      qr.make();
+      document.getElementById("qr").innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 });
+      document.getElementById("payload").textContent = payload;
+      FP.publishLiveQr(`${profile}#${cred.tokenId}${expired ? "#expired" : ""}`, { label: `${profile} · ${cred.issuerShort} credential #${cred.tokenId}${expired ? " (EXPIRED test)" : ""}`, payload, at: Math.floor(Date.now() / 1000) });
+    }
+    await refresh();
+    timer = setInterval(async () => {
+      const age = Math.floor(Date.now() / 1000) - issuedAt - (expired ? 120 : 0);
+      const left = 30 - age;
+      document.getElementById("countdown").textContent = expired ? "stale on purpose" : `refresh in ${Math.max(left, 0)} s`;
+      if (left <= 0 && !expired) await refresh();
+      else if (expired) FP.publishLiveQr(`${profile}#${cred.tokenId}#expired`, { label: `${profile} · ${cred.issuerShort} credential #${cred.tokenId} (EXPIRED test)`, payload: document.getElementById("payload").textContent, at: Math.floor(Date.now() / 1000) });
+    }, 1000);
+  }
+
+  function stopQr() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    document.getElementById("qrCard").hidden = true;
+  }
+  document.getElementById("stopQr").onclick = stopQr;
+
+  async function revealCode(cred) {
+    const wallet = FP.signerFor(profile, cred.issuerId);
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const signature = await wallet.signMessage(`FanPassport code request ${cred.tokenId} 1 ${issuedAt}`);
+    const info = document.getElementById("info");
+    info.hidden = false;
+    try {
+      const r = await FP.api("/api/wallet/code", { tokenId: cred.tokenId, dropId: 1, issuedAt, signature });
+      info.innerHTML = `<h2>Presale code · drop D1</h2><div class="otp">${FP.esc(r.code)}</div><p class="small muted">Single-use, bound to credential #${cred.tokenId}. Enter it at the <a href="seller.html">ticket seller</a> once ${FP.esc(r.issuerShort)} has uploaded its code list.</p>`;
+    } catch (e) {
+      info.innerHTML = `<span class="pill bad">${FP.esc(e.message)}</span>`;
+    }
+  }
+
+  async function tryTransfer(cred) {
+    const info = document.getElementById("info");
+    info.hidden = false;
+    const r = await FP.api("/api/demo/transfer", { tokenId: cred.tokenId });
+    info.innerHTML = r.reverted
+      ? `<h2>Transfer attempt</h2><div class="verdict reject"><div class="big">REVERTED</div><p><code>${FP.esc(r.error)}()</code> — FanCredential is an ERC-5192 locked token: only mint and burn can move it.</p></div><p class="small muted">Simulated as <code>transferFrom</code> from the holder (${FP.short(r.from)}) via eth_call.</p>`
+      : `<span class="pill bad">Transfer did not revert!</span>`;
+  }
+
+  renderProfiles();
+  renderCreds();
+  setInterval(() => { if (!timer) renderCreds(); }, 8000);
+</script>
+</body>
+</html>
