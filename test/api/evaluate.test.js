@@ -102,6 +102,24 @@ describe("API - Evaluate: measured costs and issuer compromise", function () {
       expect(check.body).to.deep.include({ ok: true, holderName: "Ana Souza" });
     });
 
+    it("credential status explains why it is invalid", async function () {
+      await request(app).post("/api/admin/issuers/1/suspend");
+      expect((await request(app).get(`/api/credentials/${ids.A}`)).body.status).to.equal("IssuerSuspended");
+      await request(app).post("/api/admin/issuers/1/reactivate");
+      expect((await request(app).get(`/api/credentials/${ids.A}`)).body.status).to.equal("valid");
+    });
+
+    it("re-attesting an already redeemed credential keeps it redeemed and cites the original door transaction", async function () {
+      const door1Tx = (await request(app).get("/api/events")).body.find((e) => e.name === "Redeemed" && e.args.credentialId === String(ids.A)).txHash;
+      await request(app).post("/api/issuers/1/bump-epoch");
+      expect((await request(app).get(`/api/credentials/${ids.A}`)).body.status).to.equal("StaleEpoch");
+      const re = (await request(app).post("/api/issuers/1/reattest").send({ tokenId: ids.A })).body;
+      const fresh = (await request(app).get(`/api/credentials/${re.tokenId}`)).body;
+      expect(fresh).to.deep.include({ status: "valid", redeemedInD1: true });
+      const check = await request(app).post("/api/doors/2/check").send({ payload: await qr(ana.deriveChild(1), re.tokenId) });
+      expect(check.body).to.deep.include({ ok: false, reason: "AlreadyRedeemed", priorTx: door1Tx });
+    });
+
     it("only known issuers can be suspended", async function () {
       expect((await request(app).post("/api/admin/issuers/9/suspend")).status).to.equal(404);
     });
