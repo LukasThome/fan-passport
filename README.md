@@ -24,7 +24,7 @@ Requires Node.js 18+ (22 recommended). No compiler download: Solidity 0.8.24 com
 
 ```bash
 npm install
-npm test        # 157 tests: contracts, off-chain rules, API end to end
+npm test        # 158 tests: contracts, off-chain rules, API end to end
 npm start       # in-process chain + web app on http://localhost:3000
 ```
 
@@ -117,7 +117,7 @@ The acceptance criteria are the white paper's Appendix A, written as Gherkin in 
 | Off-chain rules | `test/lib/*.test.js` | TOTP against the RFC 4226/6238 vectors, presale codes (HKDF + HMAC, base32), identity commitments, eligibility rules, CSV |
 | End to end (API) | `test/api/*.test.js` | Full demo script over HTTP, measured costs, compromise, reset, camera/LAN pages, scripted testnet runner and its report |
 
-Contract coverage (`npm run coverage`): **100% statements, 100% lines, 100% functions, 97.6% branches**. CI runs the tests, coverage and the terminal demo on every push.
+Contract coverage (`npm run coverage`): **100% statements, 100% lines, 100% functions, 97.7% branches**. CI runs the tests, coverage and the terminal demo on every push.
 
 ## Evaluate: what the chain costs
 

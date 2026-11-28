@@ -102,6 +102,11 @@ describe("Guards - inputs the contracts refuse", function () {
       await expect(gate.connect(door2).redeem(tokenId, 5n, p.issuedAt, p.sig)).to.be.revertedWithCustomError(gate, "NotADoor");
     });
 
+    it("reports an unknown or burned token as not redeemed", async function () {
+      const { gate } = await loadFixture(deployFanPassport);
+      expect(await gate.isRedeemed(DROP_D1, 999n)).to.equal(false);
+    });
+
     it("refuses a malformed holder signature", async function () {
       const { gate, door1, fanAna, issuerA, mintFor } = await loadFixture(deployFanPassport);
       const { tokenId } = await mintFor({ issuer: issuerA, issuerId: ISSUER_A, credType: CRED_ATTENDANCE, eventId: 100n, holder: fanAna.address });
