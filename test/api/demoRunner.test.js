@@ -57,3 +57,12 @@ describe("demoRunner - scripted Appendix A run and its report", function () {
     expect(md).to.not.include("basescan");
   });
 });
+
+describe("demoRunner - explorer lookup", function () {
+  const { explorerFor } = require("../../src/demoRunner");
+  it("knows the white paper's testnets and nothing else", function () {
+    expect(explorerFor(84532)).to.equal("https://sepolia.basescan.org");
+    expect(explorerFor(421614)).to.equal("https://sepolia.arbiscan.io");
+    expect(explorerFor(31337)).to.equal(undefined);
+  });
+});

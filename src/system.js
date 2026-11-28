@@ -24,6 +24,8 @@ async function deployContracts(ethers, adminSigner) {
  */
 async function createSystem(ethers) {
   const [admin, issuerA, issuerB, door1, door2, relayer] = await ethers.getSigners();
+  if (!relayer) throw new Error("FanPassport needs 6 accounts (admin, issuer A, issuer B, door 1, door 2, relayer). On a testnet run `npm run testnet:keys` first.");
+  const fromBlock = await ethers.provider.getBlockNumber();
   const { registry, credential, gate } = await deployContracts(ethers, admin);
   const issuerSigners = { 1: issuerA, 2: issuerB };
   const doorSigners = { 1: door1, 2: door2 };
@@ -53,6 +55,7 @@ async function createSystem(ethers) {
     ethers,
     provider: ethers.provider,
     chainId: Number(chainId),
+    fromBlock,
     networkName: (await ethers.provider.getNetwork()).name,
     contracts: { registry, credential, gate },
     admin,

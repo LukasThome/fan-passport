@@ -93,7 +93,7 @@ function createApp(system) {
     const sources = [["IssuerRegistry", registry], ["FanCredential", credential], ["RedemptionGate", gate]];
     const events = [];
     for (const [contractName, c] of sources) {
-      for (const log of await c.queryFilter("*", 0)) {
+      for (const log of await c.queryFilter("*", system.fromBlock ?? 0)) {
         if (!log.fragment || ["Transfer", "Locked"].includes(log.fragment.name)) continue;
         const args = {};
         log.fragment.inputs.forEach((inp, idx) => {
@@ -328,7 +328,7 @@ function createApp(system) {
   }
 
   async function findRedemption(credentialId, dropId) {
-    const logs = await gate.queryFilter(gate.filters.Redeemed(credentialId, dropId), 0);
+    const logs = await gate.queryFilter(gate.filters.Redeemed(credentialId, dropId), system.fromBlock ?? 0);
     const last = logs[logs.length - 1];
     if (!last) return {};
     const doorEntry = Object.values(doors).find((d) => d.signer.address === last.args.door);

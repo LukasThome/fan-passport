@@ -16,7 +16,12 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, _hre, runSuper) => {
   return runSuper();
 });
 
-const testnetAccounts = process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [];
+// Testnet roles (admin, issuer A, issuer B, door 1, door 2, relayer): `npm run testnet:keys` writes
+// testnet-keys.json (git-ignored, throwaway testnet keys). DEPLOYER_PRIVATE_KEY alone is enough for deploy.js.
+const fs = require("fs");
+const keysFile = path.join(__dirname, "testnet-keys.json");
+const roleKeys = fs.existsSync(keysFile) ? JSON.parse(fs.readFileSync(keysFile, "utf8")).keys : [];
+const testnetAccounts = roleKeys.length ? roleKeys : process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [];
 
 module.exports = {
   solidity: {
@@ -26,6 +31,8 @@ module.exports = {
   networks: {
     hardhat: {},
     localhost: { url: "http://127.0.0.1:8545" },
+    // Dress rehearsal of the testnet run against a local `npx hardhat node`, with the testnet role keys.
+    rehearsal: { url: "http://127.0.0.1:8545", accounts: testnetAccounts },
     // Public L2 testnets from the technical white paper (Table 3, row 12).
     baseSepolia: { url: process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org", accounts: testnetAccounts },
     arbitrumSepolia: { url: process.env.ARB_SEPOLIA_RPC || "https://sepolia-rollup.arbitrum.io/rpc", accounts: testnetAccounts },

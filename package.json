@@ -12,7 +12,11 @@
     "chain": "hardhat node",
     "start:localhost": "hardhat run scripts/start.js --network localhost",
     "demo:cli": "hardhat run scripts/demo-cli.js",
-    "coverage": "hardhat coverage"
+    "coverage": "hardhat coverage",
+    "testnet:keys": "node scripts/testnet-keys.js",
+    "testnet:demo": "hardhat run scripts/testnet-demo.js --network baseSepolia",
+    "testnet:rehearsal": "hardhat run scripts/testnet-demo.js --network rehearsal",
+    "start:testnet": "hardhat run scripts/start.js --network baseSepolia"
   },
   "license": "MIT",
   "devDependencies": {

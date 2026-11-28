@@ -6,3 +6,5 @@ coverage.json
 typechain-types/
 .env
 deployments/*.local.json
+testnet-keys.json
+docs/*.local.md
