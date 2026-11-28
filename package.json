@@ -1,6 +1,6 @@
 {
   "name": "fanpassport-mvp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "FanPassport PD3 MVP - non-transferable fan credentials, single-use presale codes and shared on-chain redemption across two issuers and two doors (INE5458, UFSC)",
   "scripts": {
     "test": "hardhat test",
