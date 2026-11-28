@@ -30,7 +30,7 @@ npm start       # in-process chain + web app on http://localhost:3000
 
 Open **http://localhost:3000**. The **Sandbox** puts the demo script on the left (every step runs for real against the contracts) and the fan's iPhone on the right, which follows along. *Reset chain* redeploys fresh contracts.
 
-**Backup run:** `docs/media/sandbox-demo-run.mp4` (54 s screen recording of the sandbox) and `npm run demo:cli` (the same script in the terminal, with a report).
+**Pitch deck:** [`docs/pitch/FanPassport-pitch-deck.pdf`](docs/pitch/FanPassport-pitch-deck.pdf) (10 slides + appendix). **Backup run:** `docs/media/sandbox-demo-run.mp4` (54 s screen recording of the sandbox) and `npm run demo:cli` (the same script in the terminal, with a report).
 
 ### The demo, step by step
 
@@ -144,7 +144,7 @@ src/                system (deploy + Step 0), app (HTTP API), server (resettable
 public/             sandbox (index), phone app, issuer portal, inbox, claim, wallet, doors, seller
 scripts/            start, demo-cli, deploy, testnet-keys, testnet-demo
 test/               contracts, lib, api
-docs/               demo-script.feature, media (screenshots, backup video), testnet run reports
+docs/               demo-script.feature, pitch deck (PDF), media (screenshots, backup video), testnet run reports
 ```
 
 ## Team
