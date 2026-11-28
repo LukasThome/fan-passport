@@ -36,6 +36,11 @@
     return FP.signHolderProof(FP.signerFor(profile, issuerId), tokenId, 1, issuedAt);
   }
   const row = (l, v, tone) => ({ l, v, tone });
+  function replaceCredential(profile, oldId, newId, txHash) {
+    const w = FP.loadWallet();
+    const c = (w.profiles[profile]?.credentials || []).find((x) => x.tokenId === oldId);
+    if (c) { c.tokenId = newId; c.txHash = txHash; FP.saveWallet(w); }
+  }
   const ANA = "Ana Souza";
   const BRUNO = "Bruno Lima";
 
@@ -205,6 +210,42 @@
         };
       },
     },
+    {
+      short: "Issuer compromise", actor: "Registry admin + Issuer B", cta: "Suspend, bump epoch, re-attest",
+      title: "A compromised issuer key is contained in one transaction",
+      desc: "Suppose Issuer B's signing key leaks. The admin suspends Issuer B: every door rejects its credentials at once. After the fix, Issuer B bumps its epoch (all old credentials become invalid) and re-attests the genuine ones under the new epoch.",
+      async run(ctx) {
+        const p1 = await qr(ANA, 2, ctx.B);
+        const sus = await FP.api("/api/admin/issuers/2/suspend", {});
+        const c1 = await FP.api("/api/doors/2/check", { payload: p1 });
+        await FP.api("/api/admin/issuers/2/reactivate", {});
+        const bump = await FP.api("/api/issuers/2/bump-epoch", {});
+        const c2 = await FP.api("/api/doors/2/check", { payload: await qr(ANA, 2, ctx.B) });
+        const re = await FP.api("/api/issuers/2/reattest", { tokenId: ctx.B });
+        replaceCredential(ANA, ctx.B, re.tokenId, re.txHash);
+        ctx.B = re.tokenId;
+        const c3 = await FP.api("/api/doors/2/check", { payload: await qr(ANA, 2, ctx.B) });
+        return {
+          verdict: { tone: c3.ok ? "ok" : "bad", big: "CONTAINED", text: `Old #${re.oldTokenId} burned · re-attested as #${re.tokenId} under epoch ${re.epoch}`, tx: `suspend tx ${sus.txHash}` },
+          rows: [
+            row("Admin suspends Issuer B → scan of its credential", c1.reason, "bad"),
+            row("Admin reactivates · Issuer B bumps epoch", `epoch ${bump.epoch}`, "info"),
+            row(`Old credential #${re.oldTokenId} after the bump`, c2.reason, "bad"),
+            row(`Re-attested #${re.tokenId} at Door 2`, c3.ok ? "eligible" : c3.reason, c3.ok ? "ok" : "bad"),
+          ],
+          phone: { screen: "wallet", profile: ANA },
+        };
+      },
+    },
+    {
+      short: "Is the chain worth it?", actor: "Evaluate", cta: "Measure the cost",
+      title: "What the chain costs, measured — and when it is the wrong tool",
+      desc: "Gas comes from this run's own receipts. Prices are assumptions you can edit. For one artist, one seller and one door, a signed credential plus a database is cheaper and sufficient; the chain earns its place at the second issuer.",
+      async run() {
+        const costs = await FP.api("/api/costs");
+        return { cost: costs, phone: { screen: "wallet", profile: ANA } };
+      },
+    },
   ];
 
   // ----------------------------------------------------------------- render
@@ -237,7 +278,45 @@
     setPhone((res && res.phone) || { screen: i === 0 ? "empty" : "wallet", profile: ANA });
   }
 
+  const COST_KEY = "fp.costinputs.v1";
+  function costInputs() {
+    try { return { gwei: 0.05, ethUsd: 2500, ...JSON.parse(localStorage.getItem(COST_KEY) || "{}") }; } catch (_) { return { gwei: 0.05, ethUsd: 2500 }; }
+  }
+  const usd = (x) => (x < 0.01 ? `$${x.toFixed(4)}` : `$${x.toFixed(2)}`);
+  function renderCost(c) {
+    const inp = costInputs();
+    const gasUsd = (gas) => gas * inp.gwei * 1e-9 * inp.ethUsd;
+    const m = c.measured;
+    const refUsd = gasUsd(c.referenceDropGas);
+    const wp = c.whitePaper;
+    const ceilingUsd = (c.referenceDrop.mints + c.referenceDrop.redemptions) * wp.perTxCeilingUsd;
+    const offChain = wp.designC - ceilingUsd; // OTP, email, escalation: identical in (a) and (c)
+    const designCmeasured = offChain + refUsd;
+    $("verdict").innerHTML = `<div class="verdict2 ok"><span class="big">${usd(gasUsd(m.redeem.avgGas))}</span><div class="txt"><span>per admission at your prices · white paper ceiling ${usd(wp.perTxCeilingUsd)}</span><span class="tx">redeem() ≈ ${m.redeem.avgGas.toLocaleString("en")} gas · mint() ≈ ${m.mint.avgGas.toLocaleString("en")} gas · measured on this chain</span></div></div>`;
+    $("rows").hidden = false;
+    $("rows").innerHTML = `
+      <div class="rowi" style="flex-wrap:wrap;gap:16px">
+        <label class="small muted" style="display:flex;align-items:center;gap:8px">Effective gas price (L2 + L1 data), gwei <input id="cGwei" type="number" step="0.001" min="0" value="${inp.gwei}" style="width:100px"></label>
+        <label class="small muted" style="display:flex;align-items:center;gap:8px">ETH / USD <input id="cEth" type="number" step="1" min="0" value="${inp.ethUsd}" style="width:100px"></label>
+        <span class="chip info">assumptions — edit</span>
+      </div>
+      <div class="rowi"><span class="l">Measured gas · ${m.mint.count} mints · ${m.redeem.count} redemptions · ${m.revoke.count} revocations</span><span class="chip info">from receipts</span></div>
+      <div class="rowi"><span class="l">Reference drop: ${c.referenceDrop.mints.toLocaleString("en")} mints + ${c.referenceDrop.redemptions.toLocaleString("en")} redemptions = ${c.referenceDropGas.toLocaleString("en")} gas</span><span class="chip ok">${usd(refUsd)}</span></div>
+      <div class="rowi"><span class="l">Same drop at the white paper's $0.02 ceiling</span><span class="chip info">${usd(ceilingUsd)}</span></div>
+      <div class="rowi"><span class="l"><b>(a)</b> signed credential + central database (no gas)</span><span class="chip ok">$${wp.designA.min.toFixed(2)}–${wp.designA.max.toFixed(2)}</span></div>
+      <div class="rowi"><span class="l"><b>(c)</b> on-chain · white paper worksheet / with measured gas</span><span class="chip bad">$${wp.designC.toFixed(2)} / ${usd(designCmeasured)}</span></div>
+      <div class="rowi"><span class="l"><b>1 artist · 1 seller · 1 door</b> → the chain is the wrong tool: (a) is cheaper, faster (no block wait) and simpler to erase (LGPD).</span><span class="chip ok">use (a)</span></div>
+      <div class="rowi"><span class="l"><b>2+ distrusting issuers and doors</b> → only (c) gives single-use state with no trusted operator (steps 5–6).</span><span class="chip ok">use (c)</span></div>`;
+    const save = () => {
+      try { localStorage.setItem(COST_KEY, JSON.stringify({ gwei: Number($("cGwei").value) || 0, ethUsd: Number($("cEth").value) || 0 })); } catch (_) {}
+      renderCost(c);
+    };
+    $("cGwei").onchange = save;
+    $("cEth").onchange = save;
+  }
+
   function renderResult(res) {
+    if (res && res.cost) return renderCost(res.cost);
     const v = res && res.verdict;
     $("verdict").innerHTML = v ? `<div class="verdict2 ${v.tone}"><span class="big">${esc(v.big)}</span><div class="txt"><span>${esc(v.text)}</span><span class="tx">${esc(v.tx)}</span></div></div>` : "";
     const rows = (res && res.rows) || [];

@@ -26,6 +26,10 @@ function createApp(system) {
   const outbox = []; // mocked e-mail + SMS deliveries
   const issued = []; // { tokenId, issuerId, name, email, phone, holder, txHash }
   const sellerCodes = new Map(); // code -> { issuerId, dropId, used, buyerName }
+  const gasUsed = { mint: [], redeem: [], revoke: [] }; // measured from this run's own receipts
+  const track = (kind, receipt) => {
+    if (receipt && receipt.status === 1) gasUsed[kind].push(Number(receipt.gasUsed));
+  };
 
   const app = express();
   app.use(express.json({ limit: "1mb" }));
@@ -162,6 +166,7 @@ function createApp(system) {
     const issuer = getIssuer(req, res);
     if (!issuer) return;
     const receipt = await (await credential.connect(issuer.signer).revoke(Number(req.body.tokenId))).wait();
+    track("revoke", receipt);
     res.json({ txHash: receipt.hash, blockNumber: receipt.blockNumber });
   }));
 
@@ -179,6 +184,23 @@ function createApp(system) {
     }
     res.json({ issuerId: issuer.id, dropId, count: codes.length, codes });
   }));
+
+  /** Issuer signs an EIP-712 attestation off-chain; the relayer submits it and pays the gas. */
+  async function mintFor(issuer, row, holder) {
+    const att = {
+      issuerId: issuer.id,
+      credType: issuer.credType,
+      eventId: issuer.eventId,
+      identityCommitment: identityCommitment(issuer.identitySecret, row.name, row.phone),
+      holder,
+      deadline: nowSec() + 600,
+    };
+    const sig = await issuer.signer.signTypedData(domainFor(chainId, await credential.getAddress()), attestationTypes, att);
+    const receipt = await (await credential.connect(relayer).mint(att, sig)).wait();
+    track("mint", receipt);
+    const ev = receipt.logs.map((l) => { try { return credential.interface.parseLog(l); } catch (_) { return null; } }).find((e) => e?.name === "CredentialIssued");
+    return { receipt, tokenId: Number(ev.args.tokenId) };
+  }
 
   // --------------------------------------------------------------- claim flow
   app.post("/api/claim/request", (req, res) => {
@@ -213,24 +235,14 @@ function createApp(system) {
     }
 
     const issuer = issuers[c.issuerId];
-    const att = {
-      issuerId: issuer.id,
-      credType: issuer.credType,
-      eventId: issuer.eventId,
-      identityCommitment: identityCommitment(issuer.identitySecret, c.row.name, c.row.phone),
-      holder,
-      deadline: nowSec() + 600,
-    };
-    const sig = await issuer.signer.signTypedData(domainFor(chainId, await credential.getAddress()), attestationTypes, att);
-    let receipt;
+    let minted;
     try {
-      receipt = await (await credential.connect(relayer).mint(att, sig)).wait();
+      minted = await mintFor(issuer, c.row, holder);
     } catch (err) {
       const reason = decodeError(err);
       return res.status(reason === "DuplicateCredential" ? 409 : 500).json({ error: reason || err.message });
     }
-    const ev = receipt.logs.map((l) => { try { return credential.interface.parseLog(l); } catch (_) { return null; } }).find((e) => e?.name === "CredentialIssued");
-    const tokenId = Number(ev.args.tokenId);
+    const { receipt, tokenId } = minted;
     c.used = true;
     c.tokenId = tokenId;
     issued.push({ tokenId, issuerId: issuer.id, name: c.row.name, email: c.row.email, phone: c.row.phone, holder, txHash: receipt.hash });
@@ -414,6 +426,7 @@ function createApp(system) {
     try {
       const sent = await tx(...args);
       const receipt = await sent.wait();
+      track("redeem", receipt);
       res.json({ admit: receipt.status === 1, receiptStatus: receipt.status, txHash: receipt.hash, blockNumber: receipt.blockNumber, door: door.name });
     } catch (err) {
       res.json({ admit: false, reason: decodeError(err) || err.shortMessage || "Reverted", ...(await findRedemption(p.credentialId, p.dropId)) });
@@ -426,6 +439,61 @@ function createApp(system) {
     const t = txs.reverse().find((x) => x.from === address);
     return t ? t.hash : null;
   }
+
+  // ------------------------------------------------- evaluate: measured costs
+  const WHITE_PAPER = {
+    perTxCeilingUsd: 0.02, // section 5.4: gas per admission, as a ceiling
+    designA: { min: 225, max: 229 }, // (a) signed credential + central DB, per reference drop
+    designC: 276.5, // (c) on-chain, per reference drop (worksheet)
+    premium: { min: 47.5, max: 49 },
+  };
+  const REFERENCE_DROP = { mints: 1500, redemptions: 1000 };
+  app.get("/api/costs", (_req, res) => {
+    const stat = (xs) => ({ count: xs.length, avgGas: xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0 });
+    const measured = { mint: stat(gasUsed.mint), redeem: stat(gasUsed.redeem), revoke: stat(gasUsed.revoke) };
+    res.json({
+      measured,
+      referenceDrop: REFERENCE_DROP,
+      referenceDropGas: REFERENCE_DROP.mints * measured.mint.avgGas + REFERENCE_DROP.redemptions * measured.redeem.avgGas,
+      whitePaper: WHITE_PAPER,
+    });
+  });
+
+  // --------------------------------------- issuer compromise (white paper 4.2)
+  app.post("/api/admin/issuers/:id/suspend", wrap(async (req, res) => {
+    const issuer = getIssuer(req, res);
+    if (!issuer) return;
+    const receipt = await (await registry.connect(system.admin).suspendIssuer(issuer.id)).wait();
+    res.json({ txHash: receipt.hash, blockNumber: receipt.blockNumber });
+  }));
+
+  app.post("/api/admin/issuers/:id/reactivate", wrap(async (req, res) => {
+    const issuer = getIssuer(req, res);
+    if (!issuer) return;
+    const receipt = await (await registry.connect(system.admin).reactivateIssuer(issuer.id)).wait();
+    res.json({ txHash: receipt.hash, blockNumber: receipt.blockNumber });
+  }));
+
+  app.post("/api/issuers/:id/bump-epoch", wrap(async (req, res) => {
+    const issuer = getIssuer(req, res);
+    if (!issuer) return;
+    const receipt = await (await registry.connect(issuer.signer).bumpEpoch(issuer.id)).wait();
+    res.json({ txHash: receipt.hash, blockNumber: receipt.blockNumber, epoch: Number(await registry.epochOf(issuer.id)) });
+  }));
+
+  /** Re-attest a genuine credential after an epoch bump: burn the stale token, mint a new one to the same holder. */
+  app.post("/api/issuers/:id/reattest", wrap(async (req, res) => {
+    const issuer = getIssuer(req, res);
+    if (!issuer) return;
+    const oldTokenId = Number(req.body.tokenId);
+    const rec = issued.find((x) => x.tokenId === oldTokenId && x.issuerId === issuer.id);
+    if (!rec) return res.status(404).json({ error: "no off-chain record for this credential" });
+    const burnReceipt = await (await credential.connect(issuer.signer).burn(oldTokenId)).wait();
+    const { receipt, tokenId } = await mintFor(issuer, rec, rec.holder);
+    rec.tokenId = tokenId;
+    rec.txHash = receipt.hash;
+    res.json({ oldTokenId, tokenId, txHash: receipt.hash, burnTx: burnReceipt.hash, epoch: Number(await registry.epochOf(issuer.id)) });
+  }));
 
   // --------------------------------------------------------- demo utilities
   /** Non-transferability: simulate the holder calling transferFrom (eth_call, no gas needed). */
