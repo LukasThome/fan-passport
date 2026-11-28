@@ -7,10 +7,12 @@
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="css/style.css" />
   <script src="/vendor/ethers.js"></script>
+  <script>window.FP_NO_NAV = true; /* fan-facing page: app look, no staff menu */</script>
   <script src="js/common.js"></script>
 </head>
 <body>
 <main style="max-width:640px">
+  <div class="brand" style="font-size:19px;margin-bottom:18px">Fan<span>Passport</span></div>
   <h1>Claim your FanPassport</h1>
   <p class="sub" id="who">Loading…</p>
   <div class="card" id="form" hidden>
@@ -54,7 +56,7 @@
       const signature = await wallet.signMessage(`FanPassport: bind ${wallet.address} to claim ${token}`);
       const r = await FP.api(`/api/claim/${token}`, { otp: document.getElementById("otp").value, holder: wallet.address, signature });
       FP.addCredential(profile, { tokenId: r.tokenId, issuerId: r.issuerId, issuerShort: r.issuerShort, eventName: r.eventName, credType: r.credType, holder: r.holder, txHash: r.txHash });
-      out.innerHTML = `<div class="verdict admit"><div class="big">CLAIMED</div><p>Credential #${r.tokenId} minted to your wallet (locked, non-transferable).</p><p class="mono">tx ${r.txHash}</p></div><a class="btn" href="wallet.html">Open my wallet →</a>`;
+      out.innerHTML = `<div class="verdict admit"><div class="big">CLAIMED</div><p>Credential #${r.tokenId} minted to your wallet (locked, non-transferable).</p><p class="mono">tx ${r.txHash}</p></div><div class="row"><a class="btn" href="phone.html?screen=claimed&profile=${encodeURIComponent(profile)}&token=${r.tokenId}&tx=${r.txHash}">Open my FanPassport app →</a><a class="btn secondary" href="wallet.html">Classic wallet</a></div>`;
       document.getElementById("form").hidden = true;
     } catch (e) {
       out.innerHTML = `<div class="verdict reject"><div class="big">REFUSED</div><p>${FP.esc(e.message)}</p></div>`;

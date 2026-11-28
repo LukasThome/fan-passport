@@ -4,6 +4,7 @@
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const os = require("os");
 const express = require("express");
 const { parseCsv } = require("../lib/csv");
 const { evaluateMerch, evaluateAttendance } = require("../lib/eligibility");
@@ -35,6 +36,7 @@ function createApp(system) {
   app.use(express.json({ limit: "1mb" }));
   app.use(express.static(path.join(ROOT, "public")));
   app.get("/vendor/ethers.js", (_req, res) => res.sendFile(path.join(ROOT, "node_modules/ethers/dist/ethers.umd.min.js")));
+  app.get("/vendor/jsqr.js", (_req, res) => res.sendFile(path.join(ROOT, "node_modules/jsqr/dist/jsQR.js")));
   app.get("/vendor/qrcode.js", (_req, res) => res.sendFile(path.join(ROOT, "node_modules/qrcode-generator/dist/qrcode.js")));
 
   const wrap = (fn) => (req, res) =>
@@ -104,6 +106,16 @@ function createApp(system) {
     events.sort((a, b) => b.blockNumber - a.blockNumber || b.logIndex - a.logIndex);
     res.json(events);
   }));
+
+  /** URLs a phone on the same Wi-Fi can open (for claim links and the fan app). */
+  app.get("/api/lan", (req, res) => {
+    const port = req.socket.localPort;
+    const urls = [];
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const a of list || []) if (a.family === "IPv4" && !a.internal) urls.push(`http://${a.address}:${port}`);
+    }
+    res.json({ urls });
+  });
 
   app.get("/api/outbox", (_req, res) => {
     res.json(outbox.map((m) => ({ ...m, currentOtp: totp(Buffer.from(m.mockPhoneSecret, "hex")) })));

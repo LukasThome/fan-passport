@@ -7,6 +7,7 @@
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="css/style.css" />
   <script src="/vendor/ethers.js"></script>
+  <script src="/vendor/jsqr.js"></script>
   <script src="js/common.js"></script>
 </head>
 <body>
@@ -16,6 +17,11 @@
 
   <div class="card">
     <h2>Scan</h2>
+    <div class="row" style="margin-bottom:12px">
+      <button id="cameraBtn">Scan with camera</button>
+      <span class="small muted">Point the webcam at the fan's phone (real phone on the same Wi-Fi, or the sandbox iPhone).</span>
+    </div>
+    <div id="camWrap" hidden style="margin-bottom:12px"><video id="cam" playsinline muted style="width:100%;max-width:480px;border-radius:12px;background:#000"></video><canvas id="camCanvas" hidden></canvas></div>
     <div class="row">
       <select id="live" style="min-width:320px"></select>
       <button class="secondary" id="useLive">Scan live QR from this device's wallet</button>
@@ -54,6 +60,48 @@
     check();
   };
   document.getElementById("checkBtn").onclick = check;
+
+  // ---- camera scanning (jsQR). getUserMedia needs a secure context: open the door page on localhost.
+  let stream = null;
+  function stopCamera() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    document.getElementById("camWrap").hidden = true;
+    document.getElementById("cameraBtn").textContent = "Scan with camera";
+  }
+  document.getElementById("cameraBtn").onclick = async () => {
+    if (stream) return stopCamera();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return FP.toast("Camera needs a secure context: open this door page on http://localhost", true);
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    } catch (e) {
+      return FP.toast("Camera not available: " + e.message, true);
+    }
+    const video = document.getElementById("cam");
+    const canvas = document.getElementById("camCanvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    video.srcObject = stream;
+    await video.play();
+    document.getElementById("camWrap").hidden = false;
+    document.getElementById("cameraBtn").textContent = "Stop camera";
+    const tick = () => {
+      if (!stream) return;
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: "dontInvert" });
+        if (code && code.data && code.data.includes("credentialId")) {
+          document.getElementById("payload").value = code.data;
+          stopCamera();
+          check();
+          return;
+        }
+      }
+      setTimeout(tick, 150);
+    };
+    tick();
+  };
 
   async function check() {
     const payload = document.getElementById("payload").value;

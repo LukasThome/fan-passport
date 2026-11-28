@@ -7,6 +7,7 @@
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="css/style.css" />
   <script src="/vendor/ethers.js"></script>
+  <script src="/vendor/qrcode.js"></script>
   <script src="js/common.js"></script>
 </head>
 <body>
@@ -37,6 +38,14 @@
     }
   };
 
+  let lanBase = "";
+  FP.api("/api/lan").then((r) => { lanBase = (r.urls && r.urls[0]) || ""; load(); }).catch(() => {});
+  function qrSvg(text) {
+    const q = qrcode(0, "M");
+    q.addData(text);
+    q.make();
+    return q.createSvgTag({ cellSize: 3, margin: 2 });
+  }
   async function load() {
     const mails = await FP.api("/api/outbox");
     document.getElementById("mails").innerHTML = mails.length ? mails.map((m) => `
@@ -46,8 +55,9 @@
         <div class="row" style="margin-top:8px">
           <a class="btn" href="${m.link}" target="_blank">Claim my credential →</a>
           <span class="spacer"></span>
-          <span class="small muted">📱 ${FP.esc(m.mockPhone)} · one-time code</span> <span class="otp">${m.currentOtp}</span>
+          <span class="small muted">${FP.esc(m.mockPhone)} · one-time code</span> <span class="otp">${m.currentOtp}</span>
         </div>
+        ${lanBase ? `<details style="margin-top:10px"><summary class="small muted">Claim on a real phone (same Wi-Fi)</summary><div class="row" style="margin-top:8px"><div class="qr" style="padding:8px">${qrSvg(lanBase + m.link)}</div><span class="small muted mono">${FP.esc(lanBase + m.link)}</span></div></details>` : ""}
       </div>`).join("") : '<div class="card muted">No messages yet — upload a CSV in an issuer portal.</div>';
   }
   load();
