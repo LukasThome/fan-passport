@@ -1,124 +1,156 @@
-# FanPassport — PD3 MVP
+# FanPassport
 
-**Fair access to the shows fans love.** Group 5 · INE5458 Blockchain and Cryptocurrencies Technologies · UFSC
+[![tests](https://github.com/LukasThome/fan-passport/actions/workflows/test.yml/badge.svg)](https://github.com/LukasThome/fan-passport/actions/workflows/test.yml)
 
-FanPassport turns the shows you have really been to into a pass for the next one. An issuer (artist, promoter or label) turns its own attendance and merch records into **non-transferable credentials**; each fan gets a **single-use presale code** for the seller; at the door, a **rotating QR signed by the fan's key** is checked and the credential is **redeemed on-chain**, so a second door — run by a different issuer — rejects it.
+**Fair access to the shows fans love.** PD3 MVP · Group 5 · INE5458 Blockchain and Cryptocurrencies Technologies · UFSC
 
-This repository is the MVP described in the Technical White Paper, built test-first. It stages the one scenario where the chain earns its place (Table 3, row 10): **two issuers and two doors sharing redemption state without a trusted operator**.
+FanPassport turns the shows you have really been to into a pass for the next one. An issuer (artist, promoter or label) turns its own attendance and merch records into **non-transferable credentials**. Each fan gets a **single-use presale code** for the ticket seller they already use. At the door, a **rotating QR signed by the fan's key** is checked and the credential is **redeemed on-chain**, so a second door run by a *different* issuer rejects it.
 
-> For one artist, one seller and one door, a signed credential plus a database is cheaper and sufficient. The chain's threshold is the second issuer. This MVP demonstrates that mechanism; it does not claim a single pilot needs a chain.
+![Door 2, run by another issuer, rejects a credential Door 1 already redeemed, citing Door 1's transaction](docs/media/sandbox-door2-rejects.png)
+
+> **Why a chain at all?** For one artist, one seller and one door, a signed credential plus a database is cheaper and sufficient: the MVP shows that number live (step 10). The chain earns its place at the **second issuer**, when independent issuers and doors must share single-use state without appointing a trusted operator. That is exactly the scenario this MVP stages.
+
+| Course objective | Where the MVP shows it |
+|---|---|
+| **Understand** | Hash commitments instead of personal data on-chain, EIP-712 signatures from issuers and holders, ERC-5192 locked tokens |
+| **Build** | Three Solidity contracts, 100% line coverage, a relayer that pays gas, two independent door front-ends |
+| **Evaluate** | Gas measured from the run's own receipts, set against the white paper's worksheet, with the case where the chain is the wrong tool |
 
 ---
 
-## Quick start
+## Run it (local, about 1 minute)
 
-Requires Node.js 18+ (22 recommended). No compiler download is needed: Solidity 0.8.24 comes from the `solc` npm package.
+Requires Node.js 18+ (22 recommended). No compiler download: Solidity 0.8.24 comes from the `solc` npm package.
 
 ```bash
 npm install
-npm test           # 111 tests: contracts, off-chain rules, API end to end
-npm start          # deploys to an in-process chain and serves http://localhost:3000
+npm test        # 157 tests: contracts, off-chain rules, API end to end
+npm start       # in-process chain + web app on http://localhost:3000
 ```
 
-Open **http://localhost:3000** — the **Sandbox**: the demo script on the left (each step runs for real against the contracts), the fan's iPhone on the right showing the wallet, claim, presale code and rotating door pass as you go. *Reset chain* redeploys fresh contracts. The classic per-actor pages (issuer portals, doors, seller, overview) are still in the top menu.
+Open **http://localhost:3000**. The **Sandbox** puts the demo script on the left (every step runs for real against the contracts) and the fan's iPhone on the right, which follows along. *Reset chain* redeploys fresh contracts.
 
-Other commands:
+**Backup run:** `docs/media/sandbox-demo-run.mp4` (54 s screen recording of the sandbox) and `npm run demo:cli` (the same script in the terminal, with a report).
 
-| Command | What it does |
-|---|---|
-| `npm run demo:cli` | Runs the whole Appendix A demo script in the terminal (backup run for the pitch) |
-| `npm run chain` + `npm run start:localhost` | Same app against a separate Hardhat node at `127.0.0.1:8545` |
-| `REPORT_GAS=1 npm run test:contracts` | Gas per `mint` / `redeem` / `revoke` |
-| `npx hardhat run scripts/deploy.js --network baseSepolia` | Deploys the contracts to Base Sepolia (set `DEPLOYER_PRIVATE_KEY`; `arbitrumSepolia` also configured) |
+### The demo, step by step
 
-Chain state lives in memory: restarting `npm start` resets the demo. To reset the fan wallets too, clear the site data for `localhost:3000` in the browser.
-
----
-
-## Live demo walkthrough (≈5 min)
-
-The Sandbox runs all of this with one button per step. To drive each actor by hand instead, use the classic pages; `/overview.html` shows the contracts, the issuer registry and a live on-chain event log.
-
-| Step | Where | What to click | What it shows |
+| # | Step | What happens on-chain | Outcome |
 |---|---|---|---|
-| 0 | Overview | — (done at start-up) | Admin registered Issuer A, Issuer B, their doors, and joint drop D1 |
-| 1 | **Issuer A** | *Load sample export* → *Apply rules & send claim invites* | Carla (not checked in) and Ana's duplicate row are rejected |
-| 1 | **Fan inbox** | *Request a claim link* for `mallory@example.com` | A non-listed email is refused |
-| 1 | **Fan inbox** | Ana's *Claim my credential* → type the one-time code → *Sign & claim* | OTP + wallet signature; relayer mints credential A (gas sponsored) |
-| 1 | **Fan inbox** | Same for Bruno | Credential A2 (used in step 7) |
-| 2 | **Issuer B** | Load sample → apply rules; then Ana claims from the inbox | Order below $15, refunded, unpaid and inside the 14-day hold are rejected |
-| 3 | **Fan wallet** (Ana) | *Try to transfer* | `Soulbound()` revert — ERC-5192 locked token; two addresses, one per issuer |
-| — | Issuer A → *Upload code list*; Wallet → *Reveal presale code*; **Ticket seller** | Buy twice with the same code | Soft gate: the code works once; the seller never sees names |
-| 4 | **Wallet** → *Show door QR*; **Door 1** → *Scan live QR from this device's wallet* | Tick the ID check → *Redeem on-chain & admit* | ADMIT only after the receipt shows success |
-| 5 | **Door 2** → scan the same QR within 60 s | — | REJECT `AlreadyRedeemed`, citing Door 1's tx; *Force-submit* shows the contract itself reverts |
-| 6 | Wallet → QR of credential B; **Door 2** | Redeem | ADMIT; Door 2 name-checks only its own issuer's credentials |
-| 7 | Door 1 re-scan · Issuer A *Revoke* Bruno's A2 · Wallet *Expired QR (test)* | — | `AlreadyRedeemed`, `Revoked`, `ProofExpired` |
+| 0 | Setup | Admin registers Issuer A (promoter) and Issuer B (artist store), their doors, and joint drop D1 | Permissioned registry |
+| 1 | Issuer A: attendance | Check-in CSV → rules → claim (OTP + wallet signature) → relayer mints | 2 credentials, 2 rows rejected, non-listed email refused |
+| 2 | Issuer B: merch | Order CSV → rules → Ana claims at a second address | Orders under $15, refunded, unpaid or inside the hold are rejected |
+| 3 | Non-transferable | `transferFrom` from the holder | `Soulbound()` revert |
+| 4 | Presale code | HMAC code per credential, uploaded to the mock seller | Works once; the seller never sees names |
+| 5 | Door 1 admits | Holder-signed QR, chain checks, ID match, `redeem()` | **ADMIT** after a success receipt |
+| 6 | Door 2 rejects | Same fresh QR at another issuer's door | **AlreadyRedeemed**, citing Door 1's tx; a forced `redeem()` reverts |
+| 7 | Door 2 admits B | Issuer B's own credential | **ADMIT** |
+| 8 | Revoke and expiry | Refund revokes A2; re-scan; stale QR | `AlreadyRedeemed`, `Revoked`, `ProofExpired` |
+| 9 | Issuer compromise | Suspend → epoch bump → re-attest | Contained; re-issue **cannot** reset single use |
+| 10 | Is the chain worth it? | Gas from this run's receipts × editable prices | (a) database vs (c) chain per reference drop |
 
-Tip: put the wallet and a door side by side in two browser windows.
+![Measured cost vs the white paper's worksheet](docs/media/sandbox-evaluate-cost.png)
+
+### With a real phone and the webcam
+
+On the same Wi-Fi, `npm start` prints a LAN address. On a phone, open the **Fan inbox** (or scan the claim QR shown there), claim with the one-time code, and open the door pass. On the laptop, open **Door 1 → Scan with camera** (on `localhost`, so the browser allows the webcam) and point it at the phone.
+
+![Claim on a phone, then the rotating door pass](docs/media/phone-claim-and-pass.png)
 
 ---
 
-## Test-driven development
+## Public testnet run (Base Sepolia)
 
-Tests were written before the code (see the commit history: red → green). The acceptance criteria are the white paper's demo script, written as Gherkin in [`docs/demo-script.feature`](docs/demo-script.feature), and automated at three levels:
+The live demo runs locally for reliability. The same script runs on the white paper's public L2 testnet and writes a report with Basescan links:
 
-| Suite | File | Covers |
-|---|---|---|
-| Contract acceptance | `test/contracts/demoScript.test.js` | Appendix A steps 0–7 directly on the contracts, plus attack cases (forged/tampered attestations, wrong holder key, replay across drops, non-door callers, unaccepted issuer, clock skew) |
-| Issuer lifecycle | `test/contracts/issuerRegistry.test.js` | Suspension, epoch bump + re-attestation, 24 h timelocked key rotation, door registration, admin handover |
-| Off-chain rules | `test/lib/*.test.js` | TOTP against RFC 4226/6238 vectors, presale-code derivation (HKDF + HMAC, base32), identity commitments, eligibility rules, CSV parsing |
-| End to end (API) | `test/api/demoScript.api.test.js` | The full demo script through the same HTTP API the pages use, including "no personal data in any on-chain event" |
+```bash
+npm run testnet:keys    # throwaway keys for the six roles (git-ignored); prints the admin address
+#   send ~0.01 Base Sepolia ETH from a faucet to that address
+npm run testnet:demo    # funds the other roles, deploys, runs Appendix A, writes docs/testnet-run-baseSepolia.md
+```
 
-CI runs `npm test` and the CLI demo on every push (`.github/workflows/test.yml`).
+The run was rehearsed against a separate Hardhat node with six independent role keys (`npm run testnet:rehearsal`). `npm run start:testnet` serves the sandbox against Base Sepolia too; each *Reset chain* deploys again.
 
 ---
 
 ## Architecture
 
-```
- Issuer A portal ─┐                         ┌─ Door 1 (Issuer A)
- Issuer B portal ─┤  issuer-signed EIP-712  │  holder-signed EIP-712 QR
-                  ▼  attestation            ▼  (refreshed every 30 s)
-            ┌──────────────┐  mint   ┌───────────────┐  redeem()  ┌────────────────┐
- relayer ──▶│ FanCredential│◀────────│ IssuerRegistry│───────────▶│ RedemptionGate │◀── Door 2 (Issuer B)
- (pays gas) │ ERC-721 +    │  keys,  │ issuers, keys,│  doors     │ drops + single │
-            │ ERC-5192     │  epochs │ epochs, doors │            │ -use flags     │
-            └──────────────┘         └───────────────┘            └────────────────┘
+```mermaid
+flowchart LR
+  subgraph offchain[Off-chain, per issuer]
+    CSV[Issuer export CSV] --> Rules[Eligibility rules]
+    Rules --> Claim[Claim: OTP + wallet signature]
+    Claim --> Sign[Issuer signs EIP-712 attestation]
+  end
+  Sign --> Relayer[Relayer pays gas]
+  Relayer -->|mint| FC[FanCredential<br/>ERC-721 + ERC-5192]
+  FC -->|keys, status, epochs| IR[IssuerRegistry]
+  Fan[Fan PWA<br/>HD wallet] -->|rotating holder-signed QR| D1[Door 1 · Issuer A]
+  Fan --> D2[Door 2 · Issuer B]
+  D1 -->|redeem| RG[RedemptionGate<br/>single use per drop]
+  D2 -->|redeem| RG
+  RG --> IR
+  RG --> FC
 ```
 
 | Contract | Responsibility |
 |---|---|
-| `IssuerRegistry` | Permissioned issuer list (admin = team multisig in the white paper, handover via `transferAdmin`), suspension, epochs for compromise recovery, 24 h timelocked key rotation, door registration |
-| `FanCredential` | Locked ERC-721 (ERC-5192). Minted by anyone (the relayer) against an EIP-712 attestation signed by an active issuer's key. One credential per identity commitment per event. Revocation and burning by the issuer or admin |
-| `RedemptionGate` | Drops and their accepted issuers. `redeem()` checks the door, the drop, single-use state, credential validity, accepted issuer, proof freshness (≤ 60 s) and that the QR was signed by the credential holder — then sets the redeemed flag once |
+| `IssuerRegistry` | Permissioned issuer list (admin = team multisig in the white paper, handed over with `transferAdmin`), suspension, epochs for compromise recovery, 24 h timelocked key rotation, door registration |
+| `FanCredential` | Locked ERC-721 (ERC-5192). Anyone (the relayer) mints against an EIP-712 attestation signed by an active issuer's key. One credential per identity commitment per event and epoch. Revocation and burning by the issuer or admin |
+| `RedemptionGate` | Drops and accepted issuers. `redeem()` checks the door, drop, single-use state, validity, accepted issuer, proof freshness (≤ 60 s) and the holder's signature, then sets the redeemed flag once |
 
-On-chain data: issuerId, credType, eventId, identity commitment, status and redemption flags. Off-chain (issuer-held): names, emails, phones, order contents, check-in logs, salts, code lists.
+**On-chain:** issuerId, credential type, eventId, identity commitment, status and redemption flags. **Off-chain, held by each issuer:** names, emails, phones, orders, check-in logs, salts and code lists. A test asserts that no personal data appears in any on-chain event.
 
-Off-chain pieces (`lib/`): eligibility rules (paid, not refunded, ≥ $15, 14-day hold, one record per identity, ≤ 2 identities per phone), identity commitment (HMAC under a per-issuer secret), presale code (HMAC-SHA256 keyed by HKDF(master key, salt = dropId), 8 base32 chars), and TOTP for the claim OTP — ported from our INE5680 project [security-mini-blockchain](https://github.com/LukasThome/security-mini-blockchain).
+### A finding from testing
 
-Measured gas (Hardhat, optimizer on): `mint` ≈ 241k, `redeem` ≈ 87k, `revoke` ≈ 39k.
+The first sandbox run of the compromise step showed that single use was keyed by **token id**. A credential re-attested after an epoch bump, or re-issued after a lost wallet, came back "unused" and could enter the same drop twice. `RedemptionGate` now keys redemptions by the credential's identity, `keccak(issuerId, eventId, commitment)`, and emits that key, so doors cite the original redemption even for a re-issued token (`test/contracts/reissue.test.js`). This sharpens the white paper's compromise-recovery procedure (section 4.2).
 
-## What is mocked (per the white paper's MVP scope)
+---
 
-- All fan data is synthetic (`data/*.csv`).
-- E-mail and SMS/OTP delivery are a mock inbox; the ticket seller is a mock page that accepts uploaded code lists.
-- ID checks are a staff checkbox; payments do not exist.
-- Joint-drop consent is mocked by a single drop creator (the admin).
-- All off-chain actors (both issuers, both doors, the relayer, the seller) run in one Node process, each with its own key. Each door still decides only from the signed QR and the shared chain state.
-- The demo runs on a local Hardhat chain; `scripts/deploy.js` targets Base Sepolia / Arbitrum Sepolia for the public-testnet run.
+## Quality: test-driven from the white paper
+
+The acceptance criteria are the white paper's Appendix A, written as Gherkin in [`docs/demo-script.feature`](docs/demo-script.feature). The commit history shows each feature going red → green.
+
+| Suite | Files | Covers |
+|---|---|---|
+| Contract acceptance | `test/contracts/demoScript.test.js` | Appendix A steps on the contracts, plus attacks: forged or tampered attestations, wrong holder key, replay across drops, non-door callers, clock skew |
+| Lifecycle and guards | `issuerRegistry.test.js`, `guards.test.js`, `reissue.test.js` | Suspension, epochs, timelocked rotation, admin handover, every refused input, re-issuance |
+| Off-chain rules | `test/lib/*.test.js` | TOTP against the RFC 4226/6238 vectors, presale codes (HKDF + HMAC, base32), identity commitments, eligibility rules, CSV |
+| End to end (API) | `test/api/*.test.js` | Full demo script over HTTP, measured costs, compromise, reset, camera/LAN pages, scripted testnet runner and its report |
+
+Contract coverage (`npm run coverage`): **100% statements, 100% lines, 100% functions, 97.6% branches**. CI runs the tests, coverage and the terminal demo on every push.
+
+## Evaluate: what the chain costs
+
+Measured on this code (Hardhat, optimizer on): `mint` ≈ 234k gas, `redeem` ≈ 87k gas, `revoke` ≈ 39k gas. A reference drop (1,500 mints + 1,000 redemptions) is ≈ 438M gas. The sandbox converts this with editable prices (labelled as assumptions) and sets it beside the white paper's worksheet: (a) signed credential + database, $225–229, vs (c) on-chain, $276.50 at the $0.02-per-transaction ceiling. **One artist, one seller, one door → use (a). Two or more distrusting issuers and doors → only (c) gives single use without a trusted operator.**
+
+## What is mocked (as scoped in the white paper)
+
+All fan data is synthetic (`data/*.csv`). E-mail and SMS/OTP delivery are a mock inbox. The ticket seller is a mock page that accepts uploaded code lists. ID checks are a staff checkbox. There are no payments. Joint-drop consent is mocked by a single drop creator (the admin). All off-chain actors run in one Node process, each with its own key, and each door still decides only from the signed QR and the shared chain state.
 
 ## Known limits (honest list)
 
-- A presale code can still be passed on; we raise the cost of scalping (locked credential, rotating QR, name-matched door check), we do not eliminate it.
-- The chain records the issuer's claim; it does not make the activity true. A colluding issuer can mint sybil credentials (mitigated by the registry, the public issuance log and revocation).
-- The admin is a standing trust assumption until handover to an issuers' multisig.
-- The fan's key lives in the browser (`localStorage`): losing it means re-issuance.
-- Offline doors (bounded double-entry window) and ZK privacy are roadmap, not MVP.
+- A presale code can still be passed on. We raise the cost of scalping (locked credential, rotating QR, name-matched door check) rather than eliminate it.
+- The chain records the issuer's claim; it does not make the activity true. A colluding issuer can mint sybil credentials, which the registry, the public issuance log and revocation mitigate.
+- The admin is a standing trust assumption until it is handed over to an issuers' multisig.
+- The fan's key lives in the browser (`localStorage`), so losing it means re-issuance, which can no longer reset single use.
+- Offline doors (a bounded double-entry window) and ZK privacy are roadmap, not MVP.
+
+## Repository map
+
+```
+contracts/          IssuerRegistry, FanCredential (ERC-5192), RedemptionGate
+lib/                eligibility rules, identity commitments, presale codes, TOTP, EIP-712 types, CSV
+src/                system (deploy + Step 0), app (HTTP API), server (resettable), demoRunner
+public/             sandbox (index), phone app, issuer portal, inbox, claim, wallet, doors, seller
+scripts/            start, demo-cli, deploy, testnet-keys, testnet-demo
+test/               contracts, lib, api
+docs/               demo-script.feature, media (screenshots, backup video), testnet run reports
+```
 
 ## Team
 
-- Arthur Bastos — Programming and Software Engineering, backend + frontend
-- Felix Gebhardt — Engineering and Strategy
-- Lucas Thomé da Silva — Quality Assurance Engineering, software testing
+- Arthur Bastos: Programming and Software Engineering, backend + frontend
+- Felix Gebhardt: Engineering and Strategy
+- Lucas Thomé da Silva: Quality Assurance Engineering, software testing
 
-License: MIT
+The TOTP code is ported from our INE5680 project [security-mini-blockchain](https://github.com/LukasThome/security-mini-blockchain). License: MIT.

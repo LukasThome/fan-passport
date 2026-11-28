@@ -56,3 +56,25 @@ Feature: Shared single-use redemption across two issuers and two doors
       | Issuer A revoked credential A2 (refund)    | Revoked         |
       | the QR was signed more than 60 s ago       | ProofExpired    |
       | the QR was signed by someone else's key    | BadHolderProof  |
+
+  Scenario: Step 9 - a compromised issuer key is contained
+    Given Issuer B's signing key has leaked
+    When the admin suspends Issuer B
+    Then every door rejects Issuer B's credentials with "IssuerSuspended"
+    When Issuer B bumps its epoch after the fix
+    Then its old credentials are invalid with "StaleEpoch"
+    When Issuer B re-attests the genuine credential under the new epoch
+    Then the new credential is valid
+    But it is still redeemed for drop D1, because single use follows the credential identity, not the token
+
+  Scenario: Re-issue after a lost wallet cannot re-enter a drop
+    Given a fan's credential was redeemed for D1 and the fan lost the wallet
+    When the issuer burns it and re-issues the same identity to a new wallet
+    Then the door rejects it with "AlreadyRedeemed", citing the original redemption
+
+  Scenario: Step 10 - is the chain worth it?
+    Given the gas used by this run's mints and redemptions, measured from their receipts
+    When the costs of a reference drop (1,500 mints, 1,000 redemptions) are computed with stated price assumptions
+    Then they are shown beside the white paper's worksheet: (a) signed credential + database vs (c) on-chain
+    And for one artist, one seller and one door the answer is (a)
+    And only with two or more distrusting issuers and doors does (c) add single use without a trusted operator
