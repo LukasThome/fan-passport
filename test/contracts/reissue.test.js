@@ -35,7 +35,7 @@ describe("Re-issuance cannot reset single use", function () {
   });
 
   it("the Redeemed event carries the identity key so doors can cite the original redemption", async function () {
-    const { gate, credential, oldId } = await loadFixture(deployFanPassport).then(async () => loadFixture(redeemedFixture));
+    const { gate, credential, oldId } = await loadFixture(redeemedFixture);
     const logs = await gate.queryFilter(gate.filters.Redeemed(oldId, DROP_D1));
     const c = await credential.getCredential(oldId);
     const expected = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256", "bytes32"], [c.issuerId, c.eventId, c.identityCommitment]));

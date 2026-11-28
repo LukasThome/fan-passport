@@ -3,6 +3,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { loadFixture, time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { deployFanPassport, signAttestation, now, CRED_ATTENDANCE, CRED_MERCH, ISSUER_A, ISSUER_B, DROP_D1 } = require("./fixture");
 
 describe("Appendix A - demo script", function () {
@@ -174,7 +175,7 @@ describe("Appendix A - demo script", function () {
     it("Step 4 - Door 1 redeems credential A with a fresh holder proof", async function () {
       const { gate, door1, fanAna, credA, proofFor } = await loadFixture(walletFixture);
       const p = await proofFor(fanAna, credA, DROP_D1);
-      await expect(gate.connect(door1).redeem(credA, DROP_D1, p.issuedAt, p.sig)).to.emit(gate, "Redeemed").withArgs(credA, DROP_D1, door1.address, ISSUER_A);
+      await expect(gate.connect(door1).redeem(credA, DROP_D1, p.issuedAt, p.sig)).to.emit(gate, "Redeemed").withArgs(credA, DROP_D1, door1.address, ISSUER_A, anyValue);
       expect(await gate.isRedeemed(DROP_D1, credA)).to.equal(true);
     });
 
@@ -191,7 +192,7 @@ describe("Appendix A - demo script", function () {
     it("Step 6 - Door 2 redeems the second issuer's credential independently", async function () {
       const { gate, door2, fanBruno, credB, proofFor } = await loadFixture(walletFixture);
       const p = await proofFor(fanBruno, credB, DROP_D1);
-      await expect(gate.connect(door2).redeem(credB, DROP_D1, p.issuedAt, p.sig)).to.emit(gate, "Redeemed").withArgs(credB, DROP_D1, door2.address, ISSUER_B);
+      await expect(gate.connect(door2).redeem(credB, DROP_D1, p.issuedAt, p.sig)).to.emit(gate, "Redeemed").withArgs(credB, DROP_D1, door2.address, ISSUER_B, anyValue);
     });
 
     it("a door may admit another issuer's credential if it is unredeemed (cross-issuer acceptance)", async function () {

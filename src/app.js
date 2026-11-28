@@ -261,6 +261,13 @@ function createApp(system) {
     res.json({ tokenId, txHash: receipt.hash, blockNumber: receipt.blockNumber, issuerId: issuer.id, issuerShort: issuer.short, eventId: issuer.eventId, eventName: issuer.eventName, credType: issuer.credType, holder });
   }));
 
+  async function credentialStatus(data) {
+    if (data.revoked) return "Revoked";
+    if (!(await registry.isActive(data.issuerId))) return "IssuerSuspended";
+    if (Number(data.epoch) !== Number(await registry.epochOf(data.issuerId))) return "StaleEpoch";
+    return "valid";
+  }
+
   /** Public, chain-only view of a credential (what any wallet or verifier can read). */
   app.get("/api/credentials/:tokenId", wrap(async (req, res) => {
     const tokenId = Number(req.params.tokenId);
@@ -275,7 +282,7 @@ function createApp(system) {
     res.json({
       tokenId, owner, issuerId, issuerShort: issuers[issuerId]?.short, credType: Number(data.credType), eventId: Number(data.eventId),
       identityCommitment: data.identityCommitment, issuedAt: Number(data.issuedAt), epoch: Number(data.epoch),
-      revoked: data.revoked, valid: await credential.isValid(tokenId), locked: await credential.locked(tokenId), redeemedInD1: await gate.isRedeemed(drop.id, tokenId),
+      revoked: data.revoked, valid: await credential.isValid(tokenId), status: await credentialStatus(data), locked: await credential.locked(tokenId), redeemedInD1: await gate.isRedeemed(drop.id, tokenId),
     });
   }));
 
@@ -327,12 +334,20 @@ function createApp(system) {
     }
   }
 
+  /** The original redemption of this credential's identity (also for re-issued tokens). */
   async function findRedemption(credentialId, dropId) {
-    const logs = await gate.queryFilter(gate.filters.Redeemed(credentialId, dropId), system.fromBlock ?? 0);
-    const last = logs[logs.length - 1];
+    let key;
+    try {
+      const c = await credential.getCredential(credentialId);
+      key = await gate.identityKey(c.issuerId, c.eventId, c.identityCommitment);
+    } catch (_) {
+      return {};
+    }
+    const logs = await gate.queryFilter(gate.filters.Redeemed(null, dropId), system.fromBlock ?? 0);
+    const last = logs.filter((l) => l.args.identityKey === key).pop();
     if (!last) return {};
     const doorEntry = Object.values(doors).find((d) => d.signer.address === last.args.door);
-    return { priorTx: last.transactionHash, priorDoor: doorEntry ? doorEntry.name : last.args.door, priorBlock: last.blockNumber };
+    return { priorTx: last.transactionHash, priorDoor: doorEntry ? doorEntry.name : last.args.door, priorBlock: last.blockNumber, priorCredentialId: Number(last.args.credentialId) };
   }
 
   /**

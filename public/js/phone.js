@@ -64,7 +64,8 @@
       let st = null;
       try { st = await FP.api(`/api/credentials/${c.tokenId}`); } catch (_) {}
       if (st && st.valid) validCount++;
-      const chip = !st ? '<span class="chip bad">not on chain</span>' : st.valid ? `<span class="chip ok">${st.redeemedInD1 ? "Used D1" : "Valid"}</span>` : `<span class="chip bad">${st.revoked ? "Revoked" : "Invalid"}</span>`;
+      const label = { Revoked: "Revoked", IssuerSuspended: "Suspended", StaleEpoch: "Re-issue pending" };
+      const chip = !st ? '<span class="chip bad">not on chain</span>' : st.valid ? `<span class="chip ok">${st.redeemedInD1 ? "Used D1" : "Valid"}</span>` : `<span class="chip bad">${label[st.status] || "Invalid"}</span>`;
       items.push(`<div class="card cred-row"><div class="cred-ic i${c.issuerId}">${c.credType === 2 ? ICON.shirt : ICON.music}</div>
         <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0"><span style="font-weight:600">${c.credType === 2 ? "Merch-qualified" : "Attended"} · ${esc(c.issuerShort)}</span>
         <span class="small muted">${esc(c.eventName)}</span><span class="mono muted" style="font-size:11.5px">${FP.short(c.holder)}</span></div>

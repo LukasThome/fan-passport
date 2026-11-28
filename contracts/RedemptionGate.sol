@@ -28,10 +28,12 @@ contract RedemptionGate is EIP712 {
 
     mapping(uint256 => Drop) private _drops;
     mapping(uint256 => mapping(uint256 => bool)) private _accepted; // dropId => issuerId => accepted
-    mapping(uint256 => mapping(uint256 => bool)) private _redeemed; // dropId => credentialId => redeemed
+    /// @dev dropId => identity key => redeemed. Keyed by the credential's identity (issuer, event,
+    ///      commitment), not its tokenId, so re-issuance (epoch re-attestation, wallet loss) cannot reset it.
+    mapping(uint256 => mapping(bytes32 => bool)) private _redeemed;
 
     event DropCreated(uint256 indexed dropId, uint256[] acceptedIssuers);
-    event Redeemed(uint256 indexed credentialId, uint256 indexed dropId, address indexed door, uint256 issuerId);
+    event Redeemed(uint256 indexed credentialId, uint256 indexed dropId, address indexed door, uint256 issuerId, bytes32 identityKey);
 
     error NotAdmin();
     error DropExists();
@@ -63,10 +65,12 @@ contract RedemptionGate is EIP712 {
         if (!_drops[dropId].exists) revert UnknownDrop();
         uint256 doorIssuerId = registry.doorIssuer(msg.sender);
         if (doorIssuerId == 0 || !_accepted[dropId][doorIssuerId]) revert NotADoor();
-        if (_redeemed[dropId][credentialId]) revert AlreadyRedeemed(credentialId, dropId);
+        FanCredential.Credential memory c = credential.getCredential(credentialId);
+        bytes32 key = identityKey(c.issuerId, c.eventId, c.identityCommitment);
+        if (_redeemed[dropId][key]) revert AlreadyRedeemed(credentialId, dropId);
 
         if (!credential.isValid(credentialId)) revert CredentialNotValid();
-        uint256 issuerId = credential.getCredential(credentialId).issuerId;
+        uint256 issuerId = c.issuerId;
         if (!_accepted[dropId][issuerId]) revert IssuerNotAccepted();
 
         if (issuedAt > block.timestamp + MAX_CLOCK_SKEW || block.timestamp > issuedAt + PROOF_TTL) revert ProofExpired();
@@ -74,14 +78,20 @@ contract RedemptionGate is EIP712 {
         (address signer, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, holderSig);
         if (err != ECDSA.RecoverError.NoError || signer != credential.ownerOf(credentialId)) revert BadHolderProof();
 
-        _redeemed[dropId][credentialId] = true;
-        emit Redeemed(credentialId, dropId, msg.sender, issuerId);
+        _redeemed[dropId][key] = true;
+        emit Redeemed(credentialId, dropId, msg.sender, issuerId, key);
     }
 
     // ---------------------------------------------------------------- views
 
     function isRedeemed(uint256 dropId, uint256 credentialId) external view returns (bool) {
-        return _redeemed[dropId][credentialId];
+        FanCredential.Credential memory c = credential.getCredential(credentialId);
+        if (c.issuerId == 0) return false; // unknown or burned token
+        return _redeemed[dropId][identityKey(c.issuerId, c.eventId, c.identityCommitment)];
+    }
+
+    function identityKey(uint256 issuerId, uint256 eventId, bytes32 commitment) public pure returns (bytes32) {
+        return keccak256(abi.encode(issuerId, eventId, commitment));
     }
 
     function isAccepted(uint256 dropId, uint256 issuerId) external view returns (bool) {

@@ -215,23 +215,25 @@
       title: "A compromised issuer key is contained in one transaction",
       desc: "Suppose Issuer B's signing key leaks. The admin suspends Issuer B: every door rejects its credentials at once. After the fix, Issuer B bumps its epoch (all old credentials become invalid) and re-attests the genuine ones under the new epoch.",
       async run(ctx) {
-        const p1 = await qr(ANA, 2, ctx.B);
+        const status = async (id) => (await FP.api(`/api/credentials/${id}`)).status;
         const sus = await FP.api("/api/admin/issuers/2/suspend", {});
-        const c1 = await FP.api("/api/doors/2/check", { payload: p1 });
+        const s1 = await status(ctx.B);
         await FP.api("/api/admin/issuers/2/reactivate", {});
         const bump = await FP.api("/api/issuers/2/bump-epoch", {});
-        const c2 = await FP.api("/api/doors/2/check", { payload: await qr(ANA, 2, ctx.B) });
+        const s2 = await status(ctx.B);
         const re = await FP.api("/api/issuers/2/reattest", { tokenId: ctx.B });
         replaceCredential(ANA, ctx.B, re.tokenId, re.txHash);
         ctx.B = re.tokenId;
+        const s3 = await status(ctx.B);
         const c3 = await FP.api("/api/doors/2/check", { payload: await qr(ANA, 2, ctx.B) });
         return {
-          verdict: { tone: c3.ok ? "ok" : "bad", big: "CONTAINED", text: `Old #${re.oldTokenId} burned · re-attested as #${re.tokenId} under epoch ${re.epoch}`, tx: `suspend tx ${sus.txHash}` },
+          verdict: { tone: "ok", big: "CONTAINED", text: `Old #${re.oldTokenId} burned · re-attested as #${re.tokenId} under epoch ${re.epoch} · still used for D1`, tx: `suspend tx ${sus.txHash}` },
           rows: [
-            row("Admin suspends Issuer B → scan of its credential", c1.reason, "bad"),
-            row("Admin reactivates · Issuer B bumps epoch", `epoch ${bump.epoch}`, "info"),
-            row(`Old credential #${re.oldTokenId} after the bump`, c2.reason, "bad"),
-            row(`Re-attested #${re.tokenId} at Door 2`, c3.ok ? "eligible" : c3.reason, c3.ok ? "ok" : "bad"),
+            row("Admin suspends Issuer B → its credentials at every door", s1, "bad"),
+            row("Admin reactivates · Issuer B bumps its epoch", `epoch ${bump.epoch}`, "info"),
+            row(`Old credential #${re.oldTokenId} after the bump`, s2, "bad"),
+            row(`Re-attested #${re.tokenId} for the genuine fan`, s3, s3 === "valid" ? "ok" : "bad"),
+            row(`#${re.tokenId} at Door 2 for D1 — re-issue cannot reset single use`, c3.reason || "eligible?!", c3.ok ? "bad" : "ok"),
           ],
           phone: { screen: "wallet", profile: ANA },
         };
